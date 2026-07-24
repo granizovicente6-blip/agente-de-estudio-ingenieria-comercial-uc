@@ -4,16 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agente de estudio — Ingeniería Comercial UC</title>
-
-<!-- Tipografías -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-<!-- Estilos de la aplicación -->
-<link rel="stylesheet" href="css/styles.css">
-
-<!-- Librerías externas: lectura de PDF y OCR (se cargan antes que nuestros scripts) -->
+<link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
 </head>
@@ -23,7 +17,7 @@
   <div class="wrap">
     <p class="eyebrow">Facultad de Economía y Administración — UC</p>
     <h1>Agente de estudio para Ingeniería Comercial</h1>
-    <p>Cada ramo de la malla se estudia distinto. Elige el tuyo, sube tus evaluaciones pasadas y el agente analiza qué se pregunta de verdad para construirte una planificación a medida.</p>
+    <p>Cada ramo de la malla se estudia distinto. Elige el tuyo en el fichero y te muestro el método, las técnicas y las herramientas que mejor le calzan.</p>
   </div>
 </header>
 
@@ -43,101 +37,81 @@
       </div>
 
       <div id="panel-planner" style="display:none;">
-        <div class="subtabs">
-          <button class="subtab-btn" id="sub-plan">Plan de estudio</button>
-          <button class="subtab-btn" id="sub-material">Evaluaciones pasadas <span class="badge" id="material-badge">0</span></button>
+        <div class="planner-controls">
+          <div class="control-group">
+            <span class="control-label">Tipo de evaluación</span>
+            <div class="exam-pills" id="exam-pills"></div>
+          </div>
+          <div class="control-group">
+            <span class="control-label">Días que faltan</span>
+            <input type="number" id="days-input" min="1" max="60" value="7">
+          </div>
+          <div class="control-group">
+            <span class="control-label">Horas disponibles / día</span>
+            <input type="number" id="hours-avail-input" min="0.25" max="12" step="0.25" value="2">
+          </div>
         </div>
 
-        <!-- ============ SUB-PANEL: PLAN ============ -->
-        <div id="panel-plan">
-          <div class="planner-controls">
-            <div class="control-group">
-              <span class="control-label">Tipo de evaluación</span>
-              <div class="exam-pills" id="exam-pills"></div>
-            </div>
-            <div class="control-group">
-              <span class="control-label">Días que faltan</span>
-              <input type="number" id="days-input" min="1" max="90" value="7">
-            </div>
-            <div class="control-group">
-              <span class="control-label">Horas disponibles / día</span>
-              <input type="number" id="hours-avail-input" min="0.25" max="12" step="0.25" value="2">
-            </div>
+        <div id="plan-output"></div>
+
+        <!-- Evaluaciones pasadas: ahora vive dentro del planificador -->
+        <div class="eval-section">
+          <div class="section-heading-row">
+            <h3 class="section-heading">Evaluaciones pasadas</h3>
+            <button class="ghost-btn small" id="toggle-evals-btn">Ocultar</button>
           </div>
-          <div id="plan-output"></div>
-        </div>
+          <div id="eval-body">
+            <p class="eval-intro">
+              Sube controles, pruebas o exámenes pasados de <b id="eval-course-label"></b> —puedes subir
+              <b>varios archivos a la vez</b> y se conservan con su formato original. El sistema reconoce los
+              temas y conceptos más importantes que se repiten; luego presiona <b>“Recalcular plan de estudio”</b>
+              para ajustar el plan de arriba.
+            </p>
 
-        <!-- ============ SUB-PANEL: MATERIAL ============ -->
-        <div id="panel-material" style="display:none;">
-          <p style="font-size:14px; color:var(--ink-soft); margin:0 0 16px; line-height:1.55;">
-            Sube controles, pruebas o exámenes pasados de <b id="eval-course-label" style="color:var(--ink);"></b>.
-            Los archivos se guardan <b>en su formato original</b> dentro de tu navegador y el agente extrae el texto
-            para analizar temas, tipos de pregunta y preguntas recurrentes. Ese análisis alimenta directamente tu plan de estudio.
-          </p>
+            <div class="eval-actions">
+              <label class="file-btn" for="eval-file-input">Subir archivos (.txt, .pdf, .jpg, .png)</label>
+              <input type="file" id="eval-file-input" accept=".txt,.pdf,.jpg,.jpeg,.png" multiple style="display:none;">
+            </div>
 
-          <div class="upload-box">
-            <div class="upload-target">
-              <div class="control-group">
-                <span class="control-label">¿Para qué evaluación es este material?</span>
-                <div class="exam-pills" id="upload-exam-pills"></div>
+            <div id="file-list" class="file-list"></div>
+            <p class="eval-note" id="file-status"></p>
+
+            <div class="eval-actions" id="recalc-actions" style="display:none;">
+              <button class="primary-btn" id="recalc-btn">Recalcular plan de estudio</button>
+            </div>
+
+            <details class="paste-details">
+              <summary>O pega las preguntas manualmente (una por línea)</summary>
+              <textarea id="eval-textarea" rows="5" placeholder="Ej: Calcule el excedente del consumidor si la demanda es Qd = 100 - 2P...&#10;Explique por qué la curva de oferta se desplaza cuando cambia el costo de los insumos.&#10;Verdadero o falso: un aumento del IVA siempre reduce el bienestar social."></textarea>
+              <div class="eval-actions">
+                <button class="primary-btn" id="analyze-btn">Analizar texto pegado</button>
               </div>
-              <div class="control-group">
-                <span class="control-label">Fecha de la evaluación (opcional)</span>
-                <input type="date" id="eval-date-input">
-              </div>
+            </details>
+
+            <div class="eval-actions">
+              <button class="ghost-btn" id="clear-evals-btn">Borrar datos de este ramo</button>
             </div>
 
-            <div class="eval-actions" style="margin-top:0;">
-              <label class="file-btn" for="eval-file-input">Subir archivos (.pdf, .jpg, .png, .txt, .docx)</label>
-              <input type="file" id="eval-file-input" accept=".txt,.pdf,.jpg,.jpeg,.png,.docx,.md,.csv" multiple style="display:none;">
-              <span class="eval-note" style="margin:0;" id="file-status">Puedes seleccionar varios archivos a la vez.</span>
-            </div>
+            <p class="eval-note">
+              El análisis se hace por completo en tu navegador: es una guía, no un resumen perfecto, así que
+              revisa que los temas detectados tengan sentido. Los PDF con texto seleccionable se leen directo;
+              los PDF escaneados y las imágenes (.jpg/.png) pasan por reconocimiento óptico (OCR), lo que puede
+              tardar unos segundos. El motor <b>descarta automáticamente las páginas “extra”</b> —portadas con
+              datos personales, instrucciones y títulos sueltos como “Tema 1”— para que solo se analicen las preguntas.
+            </p>
 
-            <ul class="file-list" id="file-list"></ul>
+            <div id="eval-analysis-output"></div>
           </div>
-
-          <p class="control-label" style="margin-bottom:8px;">O pega preguntas manualmente (una por línea)</p>
-          <textarea id="eval-textarea" rows="5" placeholder="Ej: Calcule el excedente del consumidor si la demanda es Qd = 100 - 2P...&#10;Explique por qué la curva de oferta se desplaza cuando cambia el costo de los insumos.&#10;Verdadero o falso: un aumento del IVA siempre reduce el bienestar social."></textarea>
-          <div class="eval-actions">
-            <button class="primary-btn" id="analyze-btn">Analizar y generar plan nuevo</button>
-            <button class="ghost-btn" id="reanalyze-btn">Re-analizar archivos guardados</button>
-            <button class="ghost-btn" id="clear-evals-btn">Borrar todo lo de este ramo</button>
-          </div>
-          <p class="eval-note">
-            El agente descarta automáticamente portadas, instrucciones, encabezados y títulos («Tema I», «no descorchetear las hojas», etc.):
-            solo analiza enunciados que realmente son preguntas. Si ya habías subido material antes de este filtro, presiona
-            <b>“Re-analizar archivos guardados”</b> para limpiar el análisis.
-            El análisis corre completamente en tu navegador: nada se sube a internet. Los PDF con texto seleccionable se leen directo;
-            los PDF escaneados y las imágenes pasan por reconocimiento óptico (OCR), que puede tardar y equivocarse — revisa siempre el texto extraído.
-          </p>
-          <div id="eval-analysis-output"></div>
         </div>
       </div>
     </section>
   </div>
 </main>
 
-<footer class="wrap">
-  Herramienta de apoyo al estudio · el análisis es heurístico y orientativo: úsalo como guía, no como verdad absoluta.
+<footer>
+  Agente de estudio · Ingeniería Comercial UC — herramienta personal de planificación. El análisis de evaluaciones corre localmente en tu navegador.
 </footer>
 
-<!-- ===================================================================
-     Módulos de la aplicación, cargados en orden de dependencia:
-       data      → malla de ramos y tipos de evaluación
-       storage   → persistencia (localStorage + IndexedDB)
-       extract   → extracción de texto (PDF / OCR / DOCX)
-       analysis  → motor de análisis heurístico
-       planner   → generador de plan de estudio
-       ui        → estado, render y eventos
-       main      → arranque
-     =================================================================== -->
-<script src="js/data.js"></script>
-<script src="js/storage.js"></script>
-<script src="js/text-extraction.js"></script>
-<script src="js/analysis.js"></script>
-<script src="js/planner.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/main.js"></script>
-
+<script src="app.js"></script>
 </body>
 </html>
