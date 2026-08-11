@@ -1,0 +1,8 @@
+# El nombre define la URL: <name>.<subdominio>.workers.dev, que es la que
+# app.js consulta en WORKER_URL. Si lo cambias, actualiza también app.js.
+name = "agentedestudio"
+main = "worker.js"
+compatibility_date = "2026-08-05"
+
+# La API key NO va aquí. Se guarda como secreto cifrado con:
+#   wrangler secret put ANTHROPIC_API_KEY

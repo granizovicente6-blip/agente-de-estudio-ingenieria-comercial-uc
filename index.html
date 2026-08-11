@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agente de estudio — UC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+<!-- La cabecera es de la carrera activa: el volante, el título y la bajada los
+     escribe applyCareerChrome() en app.js desde el modelo CAREERS. Lo que hay
+     aquí es solo la primera pintura (Ingeniería Comercial, la carrera por
+     defecto), para que la página no aparezca vacía antes de que corra el
+     script. -->
+<header>
+  <div class="wrap">
+    <div class="header-top">
+      <p class="eyebrow" id="header-eyebrow">Facultad de Economía y Administración — UC</p>
+
+      <!-- Insignia de la carrera activa + desplegable para cambiarla en
+           cualquier momento. El menú lo arma renderCareerMenu(). -->
+      <div class="career-switch" id="career-switch">
+        <button type="button" class="career-badge" id="career-badge"
+                aria-haspopup="true" aria-expanded="false" aria-controls="career-menu">
+          <span class="career-badge-icon" id="career-badge-icon" aria-hidden="true">📊</span>
+          <span class="career-badge-text">
+            <span class="career-badge-label">Carrera</span>
+            <span class="career-badge-name" id="career-badge-name">Ingeniería Comercial</span>
+          </span>
+          <span class="career-badge-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="career-menu" id="career-menu" role="menu" hidden></div>
+      </div>
+    </div>
+
+    <h1 id="app-title">Agente de estudio para Ingeniería Comercial</h1>
+    <p id="app-intro">Cada ramo de la malla se estudia distinto. Elige el tuyo en el fichero y te muestro el método, las técnicas y las herramientas que mejor le calzan.</p>
+  </div>
+</header>
+
+<main>
+  <div class="catalog">
+    <nav class="drawers" id="drawers"></nav>
+    <section class="card-area">
+      <!-- El planificador va primero y arranca activo: es la vista por defecto.
+           Las clases y el display los vuelve a escribir renderTabs() en app.js,
+           pero se dejan puestas aquí para que la primera pintura (antes de que
+           corra el script) ya muestre el planificador y no el método. -->
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-planner">Planificador de estudios</button>
+        <button class="tab-btn" id="tab-metodo">Método de estudio</button>
+      </div>
+
+      <div class="course-picker" id="course-picker"></div>
+
+      <div id="panel-metodo" style="display:none;">
+        <div class="index-card" id="index-card"></div>
+      </div>
+
+      <div id="panel-planner">
+        <!-- Cabecera del planificador: los dos únicos ajustes que quedan, en dos
+             columnas simétricas. La ponderación de la evaluación (en % de la nota
+             final del ramo) define la profundidad con que se estudia el temario;
+             la nota meta, cuánto hay que cerrar la brecha. El presupuesto de horas y ejercicios sale de esos dos
+             datos y de los temas que identifica Claude IA: ya no hay días ni horas
+             por día configurados a mano.
+
+             El deslizador y el campo numérico son el mismo valor por dos vías (el
+             deslizador para el dedo, el campo para el teclado); app.js los mantiene
+             sincronizados y escribe los dos badges del presupuesto. -->
+        <div class="planner-head" id="target-grade-box">
+          <div class="planner-fields">
+            <div class="planner-field">
+              <span class="control-label">Tipo de evaluación</span>
+              <!-- Las píldoras son presets: rellenan el campo de abajo con la
+                   ponderación típica de un control, una prueba o un examen. El
+                   número manda —se puede escribir cualquier valor entre 1 y
+                   100—, y la etiqueta de la derecha dice si el valor actual es
+                   un preset o uno personalizado. -->
+              <div class="exam-pills" id="exam-pills"></div>
+              <div class="exam-weight">
+                <label class="exam-weight-label" for="exam-weight-input">
+                  Ponderación de la evaluación (%)
+                </label>
+                <div class="exam-weight-row">
+                  <div class="exam-weight-field">
+                    <input type="number" id="exam-weight-input" min="1" max="100" step="1" value="25"
+                           inputmode="numeric"
+                           aria-label="Ponderación de la evaluación en la nota final, en porcentaje">
+                    <span class="exam-weight-unit" aria-hidden="true">%</span>
+                  </div>
+                  <span class="exam-weight-tag" id="exam-weight-tag">Prueba</span>
+                </div>
+              </div>
+              <p class="field-hint">Cuánto pesa en la nota final del ramo: a mayor
+                ponderación, más horas y ejercicios.</p>
+            </div>
+            <div class="planner-field">
+              <label class="control-label" for="target-grade-input">🎯 Nota meta para la evaluación</label>
+              <div class="target-grade-controls">
+                <input type="range" id="target-grade-range" min="1" max="7" step="0.1" value="5.5"
+                       aria-label="Nota meta (deslizador)">
+                <input type="number" id="target-grade-input" min="1" max="7" step="0.1" value="5.5"
+                       inputmode="decimal" aria-label="Nota meta para la evaluación">
+              </div>
+              <p class="field-hint target-grade-scale" aria-hidden="true">
+                <span>1,0</span><span>4,0 · aprobar</span><span>7,0</span>
+              </p>
+              <!-- Cierra la columna a la misma altura que la nota de la
+                   ponderación: las dos columnas terminan en la misma línea. -->
+              <p class="field-hint">La brecha entre tu nivel actual y esta meta es lo
+                que se reparte en horas y ejercicios.</p>
+            </div>
+          </div>
+          <div class="target-grade-goals">
+            <span class="effort-badge is-hours" id="target-hours-badge">⏱️ Horas totales sugeridas: —</span>
+            <span class="effort-badge is-ex" id="target-ex-badge">📝 Ejercicios meta: —</span>
+            <!-- Las horas del plan no se estudian de una sentada: se reparten en
+                 clases guiadas de 30 a 45 min. app.js escribe cuántas van. -->
+            <span class="effort-badge is-sessions" id="target-sessions-badge" hidden>🎓 Programa: —</span>
+          </div>
+          <p class="target-grade-note" id="target-grade-note"></p>
+        </div>
+
+        <!-- Aviso de que hay un plan guardado en este navegador + reinicio.
+             Lo muestra y lo oculta app.js según lo que haya en localStorage. -->
+        <div class="plan-state" id="plan-state" hidden>
+          <p class="plan-state-text" id="plan-state-text"></p>
+          <div class="plan-state-actions">
+            <button type="button" class="primary-btn small export-btn" id="btn-export-pdf">
+              📥 Descargar Ficha de Estudio
+            </button>
+            <button type="button" class="ghost-btn small reset-btn" id="reset-plan-btn">
+              Iniciar nuevo plan
+            </button>
+          </div>
+        </div>
+
+        <!-- Simulacro de examen global: solo aparece cuando el ramo ya tiene temas
+             analizados. app.js lo muestra, lo oculta y escribe la nota anterior. -->
+        <div class="exam-launch" id="exam-launch" hidden>
+          <div class="exam-launch-text">
+            <p class="exam-launch-eyebrow">Ponte a prueba</p>
+            <p class="exam-launch-note" id="exam-launch-note"></p>
+          </div>
+          <button type="button" class="exam-btn" id="btn-start-exam">
+            <span aria-hidden="true">⚡</span> Simulacro de Examen Global
+          </button>
+        </div>
+
+        <!-- Mini test de diagnóstico + temas con semáforo: son el plan en sí, y van
+             antes del resumen que los cierra. -->
+        <div id="diagnostic-output"></div>
+
+        <div id="plan-output"></div>
+
+        <!-- Evaluaciones pasadas: ahora vive dentro del planificador -->
+        <div class="eval-section">
+          <div class="section-heading-row">
+            <h3 class="section-heading">Evaluaciones pasadas</h3>
+            <button class="ghost-btn small" id="toggle-evals-btn">Ocultar</button>
+          </div>
+          <div id="eval-body">
+            <p class="eval-intro">
+              Sube controles, pruebas o exámenes pasados de <b id="eval-course-label"></b> —puedes subir
+              <b>varios archivos a la vez</b> y se conservan con su formato original. El sistema reconoce los
+              temas y conceptos más importantes que se repiten; luego presiona <b>“Generar el Plan de Estudio”</b>
+              y Claude IA arma el plan de arriba con los temas priorizados.
+            </p>
+
+            <div class="eval-actions">
+              <label class="file-btn" for="eval-file-input">Subir archivos (.txt, .pdf, .jpg, .png)</label>
+              <input type="file" id="eval-file-input" accept=".txt,.pdf,.jpg,.jpeg,.png" multiple style="display:none;">
+            </div>
+
+            <div id="file-list" class="file-list"></div>
+            <p class="eval-note" id="file-status"></p>
+
+            <!-- Único botón de análisis: genera (o regenera) el plan completo con
+                 Claude IA. app.js lo muestra cuando hay suficientes preguntas. -->
+            <div class="eval-actions" id="analyze-actions" style="display:none;">
+              <button class="primary-btn" id="ai-analyze-btn">Generar el Plan de Estudio</button>
+            </div>
+
+            <div class="ai-loading" id="ai-loading" style="display:none;">
+              <span class="ai-spinner" aria-hidden="true"></span>
+              <span>Analizando temario con Claude IA...</span>
+            </div>
+            <p class="ai-error" id="ai-error" style="display:none;"></p>
+
+            <details class="paste-details">
+              <summary>O pega las preguntas manualmente (una por línea)</summary>
+              <textarea id="eval-textarea" rows="5" placeholder="Ej: Calcule el excedente del consumidor si la demanda es Qd = 100 - 2P...&#10;Explique por qué la curva de oferta se desplaza cuando cambia el costo de los insumos.&#10;Verdadero o falso: un aumento del IVA siempre reduce el bienestar social."></textarea>
+              <div class="eval-actions">
+                <button class="primary-btn" id="analyze-btn">Analizar texto pegado</button>
+              </div>
+            </details>
+
+            <div class="eval-actions">
+              <button class="ghost-btn" id="clear-evals-btn">Borrar datos de este ramo</button>
+            </div>
+
+            <p class="eval-note">
+              La lectura de los archivos (texto y OCR) se hace por completo en tu navegador: los archivos nunca
+              se suben a ningún servidor. Para identificar los temas se envía <b>solo el texto de las preguntas</b>
+              a Claude IA; si el servicio no responde, se usa el motor local de frecuencia. En ambos casos es una
+              guía, no un resumen perfecto, así que revisa que los temas detectados tengan sentido. Los PDF con
+              texto seleccionable se leen directo;
+              los PDF escaneados y las imágenes (.jpg/.png) pasan por reconocimiento óptico (OCR), lo que puede
+              tardar unos segundos. El motor <b>descarta automáticamente las páginas “extra”</b> —portadas con
+              datos personales, instrucciones y títulos sueltos como “Tema 1”— para que solo se analicen las preguntas.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- Pantalla de selección de carrera. Es lo primero que ve un navegador nuevo
+     (boot() la abre cuando no hay carrera guardada) y sigue disponible después
+     desde la insignia de la cabecera. Las tarjetas las arma renderCareerCards()
+     desde CAREERS, así que agregar una carrera al modelo la hace aparecer aquí
+     sin tocar este archivo. El botón de cerrar se oculta en la primera visita:
+     no hay app detrás a la que volver. -->
+<div class="test-overlay career-overlay" id="career-selector-modal" hidden>
+  <div class="test-dialog career-dialog" role="dialog" aria-modal="true"
+       aria-labelledby="career-selector-title">
+    <div class="test-head career-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">Pontificia Universidad Católica de Chile</p>
+        <button type="button" class="test-close" id="career-modal-close"
+                aria-label="Cerrar y seguir en la carrera actual" hidden>×</button>
+      </div>
+      <h2 class="career-title" id="career-selector-title">¿Qué carrera estudias?</h2>
+      <p class="career-subtitle">El fichero de ramos, el método de estudio y los planes cambian
+      según la carrera.</p>
+    </div>
+
+    <div class="test-body career-body">
+      <div class="career-cards" id="career-cards"></div>
+    </div>
+
+    <div class="test-foot career-foot">
+      <p class="career-note" id="career-modal-note"></p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal del mini test de diagnóstico exprés (el contenido lo arma app.js) -->
+<div class="test-overlay" id="test-overlay" hidden>
+  <div class="test-dialog" id="test-dialog" role="dialog" aria-modal="true" aria-labelledby="test-title"></div>
+</div>
+
+<!-- Modal de práctica por tema: caso práctico + mini quiz (lo arma app.js).
+     El encabezado es fijo; el cuerpo se reemplaza según el estado
+     (cargando / listo / error). -->
+<div class="test-overlay practice-overlay" id="practice-overlay" hidden>
+  <div class="test-dialog practice-dialog" id="practice-modal" role="dialog" aria-modal="true"
+       aria-labelledby="practice-title">
+    <div class="test-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">Práctica del tema</p>
+        <button type="button" class="test-close" data-action="close-practice"
+                aria-label="Cerrar la práctica y volver">×</button>
+      </div>
+      <h2 class="practice-topic-title" id="practice-title"></h2>
+      <p class="test-counter" id="practice-subtitle"></p>
+    </div>
+    <div class="test-body practice-body" id="practice-body" aria-live="polite"></div>
+    <div class="test-foot practice-foot" id="practice-foot"></div>
+  </div>
+</div>
+
+<!-- Modal de flashcards por tema: conceptos clave en tarjetas que giran.
+     A diferencia de la práctica, el esqueleto de la tarjeta es fijo (el giro 3D
+     necesita que los nodos sobrevivan entre tarjeta y tarjeta); app.js solo
+     cambia el texto de las caras y alterna la clase .is-flipped. -->
+<div class="test-overlay flashcards-overlay" id="flashcards-overlay" hidden>
+  <div class="test-dialog flashcards-dialog" id="flashcards-modal" role="dialog" aria-modal="true"
+       aria-labelledby="flashcards-title">
+    <div class="test-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">Flashcards del tema</p>
+        <button type="button" class="test-close" data-action="close-flashcards"
+                aria-label="Cerrar las flashcards y volver">×</button>
+      </div>
+      <h2 class="practice-topic-title" id="flashcards-title"></h2>
+      <p class="test-counter" id="flashcards-subtitle"></p>
+    </div>
+
+    <div class="test-body flashcards-body" id="flashcards-body">
+      <div class="practice-loading" id="flashcards-loading" aria-live="polite">
+        <span class="ai-spinner" aria-hidden="true"></span>
+        <p class="practice-loading-text">Extrayendo conceptos clave...</p>
+        <p class="test-hint">Claude está sacando del tema los términos, definiciones y fórmulas
+        que conviene tener en la punta de la lengua. Suele tardar entre 10 y 20 segundos.</p>
+      </div>
+
+      <div class="practice-error" id="flashcards-error" hidden>
+        <p class="ai-error" id="flashcards-error-text"></p>
+        <div class="eval-actions">
+          <button type="button" class="ghost-btn" data-action="close-flashcards">Cerrar</button>
+          <button type="button" class="primary-btn" data-action="retry-flashcards">Reintentar</button>
+        </div>
+      </div>
+
+      <div class="flashcard-container" id="flashcard-container" hidden>
+        <div class="flashcard" id="flashcard" role="button" tabindex="0">
+          <div class="flashcard-inner">
+            <div class="flashcard-face flashcard-front">
+              <p class="flashcard-tag">Concepto</p>
+              <p class="flashcard-text" id="flashcard-front-text"></p>
+              <p class="flashcard-turn" aria-hidden="true">Girar ↻</p>
+            </div>
+            <div class="flashcard-face flashcard-back">
+              <p class="flashcard-tag">Definición</p>
+              <p class="flashcard-text" id="flashcard-back-text"></p>
+              <p class="flashcard-turn" aria-hidden="true">Volver ↺</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="test-foot flashcards-foot" id="flashcards-foot" hidden>
+      <div class="flashcards-nav">
+        <button type="button" class="ghost-btn" data-action="prev-flashcard">← Anterior</button>
+        <span class="flashcards-counter" id="flashcards-counter" aria-live="polite"></span>
+        <button type="button" class="ghost-btn" data-action="next-flashcard">Siguiente →</button>
+      </div>
+      <p class="flashcards-hint">Haz clic en la tarjeta o presiona <kbd>Espacio</kbd> para girarla.
+      Con <kbd>←</kbd> y <kbd>→</kbd> cambias de tarjeta.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal del explicador Feynman ("peras y manzanas"): una analogía cotidiana del
+     tema, sus equivalencias con los términos reales del ramo y el resumen en una
+     frase. El esqueleto es fijo y app.js solo rellena los textos y alterna los
+     bloques de estado (cargando / listo / error), igual que en las flashcards. -->
+<div class="test-overlay feynman-overlay" id="feynman-overlay" hidden>
+  <div class="test-dialog feynman-dialog" id="feynman-modal" role="dialog" aria-modal="true"
+       aria-labelledby="feynman-title">
+    <div class="test-head feynman-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">💡 Peras y manzanas</p>
+        <button type="button" class="test-close" data-action="close-feynman"
+                aria-label="Cerrar la explicación y volver">×</button>
+      </div>
+      <h2 class="practice-topic-title" id="feynman-title"></h2>
+      <p class="test-counter" id="feynman-subtitle"></p>
+    </div>
+
+    <div class="test-body feynman-body" id="feynman-body" aria-live="polite">
+      <div class="practice-loading" id="feynman-loading">
+        <span class="ai-spinner" aria-hidden="true"></span>
+        <p class="practice-loading-text">Traduciendo a lenguaje cotidiano...</p>
+        <p class="test-hint">Claude está buscando una analogía de la vida diaria para explicarte
+        este tema sin jerga técnica. Suele tardar entre 10 y 20 segundos.</p>
+      </div>
+
+      <div class="practice-error" id="feynman-error" hidden>
+        <p class="ai-error" id="feynman-error-text"></p>
+        <div class="eval-actions">
+          <button type="button" class="ghost-btn" data-action="close-feynman">Cerrar</button>
+          <button type="button" class="primary-btn" data-action="retry-feynman">Reintentar</button>
+        </div>
+      </div>
+
+      <div class="feynman-content" id="feynman-content" hidden>
+        <p class="feynman-eyebrow">Imagínatelo así</p>
+        <h3 class="feynman-analogy-title" id="feynman-analogy-title"></h3>
+        <!-- Los párrafos de la analogía los inserta app.js. -->
+        <div class="feynman-analogy" id="feynman-analogy"></div>
+
+        <div class="feynman-box feynman-takeaways">
+          <p class="feynman-box-title">De la analogía al ramo</p>
+          <ol class="feynman-takeaway-list" id="feynman-takeaways"></ol>
+        </div>
+
+        <div class="feynman-box feynman-summary">
+          <p class="feynman-box-title">En una frase</p>
+          <p class="feynman-summary-text" id="feynman-summary"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="test-foot feynman-foot" id="feynman-foot" hidden>
+      <span class="exam-foot-note">Si la analogía te hizo clic, el tema ya está a medio estudiar:
+      sigue con la práctica o las flashcards.</span>
+      <span class="exam-foot-actions">
+        <button type="button" class="primary-btn" data-action="close-feynman">¡Entendido!</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Micro-chat de contexto: dudas sueltas sobre el tema que se está estudiando.
+     A diferencia de los otros modales, este no muestra un material generado de
+     una vez: es una conversación, así que el esqueleto (encabezado, lista de
+     mensajes, chips y formulario) es fijo y app.js solo agrega globos al final
+     de #topic-chat-messages. Los chips llevan la pregunta completa en
+     data-chat-quick; lo que se lee en el botón es solo la etiqueta corta. -->
+<div class="test-overlay chat-overlay" id="topic-chat-overlay" hidden>
+  <div class="test-dialog chat-dialog" id="topic-chat-modal" role="dialog" aria-modal="true"
+       aria-labelledby="topic-chat-title">
+    <div class="test-head chat-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">💬 Dudas del tema</p>
+        <button type="button" class="test-close" data-action="close-topic-chat"
+                aria-label="Cerrar el chat y volver">×</button>
+      </div>
+      <h2 class="practice-topic-title" id="topic-chat-title"></h2>
+      <p class="test-counter" id="topic-chat-subtitle"></p>
+    </div>
+
+    <div class="test-body chat-body" id="topic-chat-messages" role="log" aria-live="polite"></div>
+
+    <div class="test-foot chat-foot">
+      <div class="chat-chips" id="topic-chat-chips">
+        <button type="button" class="chat-chip"
+                data-chat-quick="Explícame este tema en corto y con un ejemplo concreto.">
+          💡 Explicación corta con ejemplo</button>
+        <button type="button" class="chat-chip"
+                data-chat-quick="¿Cuáles son los errores más comunes que se cometen con este tema en las pruebas?">
+          ⚠️ Errores comunes en pruebas</button>
+        <button type="button" class="chat-chip"
+                data-chat-quick="¿Cuándo uso cada fórmula o receta de este tema? Dame el criterio para elegir en cada caso.">
+          🧮 ¿Cuándo uso cada fórmula/receta?</button>
+      </div>
+
+      <form class="chat-form" id="topic-chat-form">
+        <input type="text" id="topic-chat-input" class="chat-input" autocomplete="off"
+               maxlength="1200" placeholder="Escribe tu duda sobre este tema..."
+               aria-label="Escribe tu duda sobre este tema">
+        <button type="submit" class="chat-send" id="topic-chat-send">Enviar</button>
+      </form>
+
+      <p class="chat-note">Claude responde sobre <b id="topic-chat-scope"></b> con el contexto del ramo.
+      La conversación vive solo mientras tengas la página abierta.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modo sesión de estudio guiada: la clase particular con la IA. A diferencia del
+     chat de dudas —donde el que pregunta es el alumno—, aquí el que lleva el hilo
+     es el profesor, y la clase avanza por tres fases fijas: teoría, ejercicio
+     guiado y pregunta de cierre.
+
+     El esqueleto es fijo porque tiene que sobrevivir a los re-render: el reloj
+     late cada segundo y el cuerpo crece con cada turno, así que app.js solo
+     reescribe #study-session-body y toca por su cuenta el reloj, los pasos de
+     fase y los botones del pie. -->
+<div class="test-overlay session-overlay" id="study-session-overlay" hidden>
+  <div class="test-dialog session-dialog" id="study-session-modal" role="dialog" aria-modal="true"
+       aria-labelledby="study-session-title">
+    <div class="test-head session-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">🎓 Clase guiada con Claude</p>
+        <div class="session-head-tools">
+          <span class="session-timer" id="study-session-timer" role="timer" aria-live="off">25:00</span>
+          <button type="button" class="session-timer-btn" id="study-session-timer-btn"
+                  data-action="toggle-session-timer">⏸ Pausar</button>
+          <button type="button" class="test-close" data-action="close-session"
+                  aria-label="Salir de la clase y volver">×</button>
+        </div>
+      </div>
+      <h2 class="session-topic-title" id="study-session-title"></h2>
+
+      <!-- Programa del tema: en qué clase de cuántas va, cuánto dura y con qué
+           nivel de ejercicios. Lo escribe app.js con las píldoras de sesión
+           (🟢 completada, 🔵 en curso, ⚪ pendiente). -->
+      <div class="session-program" id="study-session-program"></div>
+
+      <!-- Las tres fases de la clase. app.js les pone .is-current y .is-done; el
+           texto no cambia nunca. -->
+      <ol class="session-phases" id="study-session-phases">
+        <li class="session-phase" data-phase="1">
+          <span class="session-phase-num">1</span>
+          <span class="session-phase-name">Teoría</span>
+        </li>
+        <li class="session-phase" data-phase="2">
+          <span class="session-phase-num">2</span>
+          <span class="session-phase-name">Práctica</span>
+        </li>
+        <li class="session-phase" data-phase="3">
+          <span class="session-phase-num">3</span>
+          <span class="session-phase-name">Cierre</span>
+        </li>
+      </ol>
+      <p class="test-counter session-subtitle" id="study-session-subtitle"></p>
+    </div>
+
+    <div class="test-body session-body" id="study-session-body" role="log" aria-live="polite"></div>
+
+    <div class="test-foot session-foot">
+      <form class="session-form" id="study-session-form">
+        <textarea id="study-session-input" class="session-input" rows="2" maxlength="1500"
+                  placeholder="Escribe tu respuesta al profesor..."
+                  aria-label="Tu respuesta al profesor"></textarea>
+        <button type="submit" class="session-send" id="study-session-send">Responder</button>
+      </form>
+
+      <div class="session-actions">
+        <button type="button" class="session-ghost" id="study-session-skip"
+                data-action="next-session-phase">Saltar a la siguiente fase →</button>
+        <button type="button" class="session-ghost is-end"
+                data-action="finish-session">Concluir sesión</button>
+        <span class="session-note" id="study-session-note">Enter envía; Shift+Enter agrega una línea.
+        La clase vive solo mientras tengas la página abierta.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal del simulacro de examen global. El encabezado es fijo (el cronómetro
+     tiene que sobrevivir a los re-render del cuerpo, o el reloj parpadearía cada
+     segundo); el cuerpo y el pie los reemplaza app.js según la vista:
+     configuración → cargando → examen → resultados. -->
+<div class="test-overlay exam-overlay" id="exam-overlay" hidden>
+  <div class="test-dialog exam-dialog" id="exam-modal" role="dialog" aria-modal="true"
+       aria-labelledby="exam-title">
+    <div class="test-head exam-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">Simulacro de examen global</p>
+        <div class="exam-head-tools">
+          <span class="exam-timer" id="exam-timer" role="timer" aria-live="off" hidden></span>
+          <button type="button" class="test-close" data-action="close-exam"
+                  aria-label="Cerrar el simulacro y volver">×</button>
+        </div>
+      </div>
+      <h2 class="exam-title" id="exam-title"></h2>
+      <div class="test-progress" id="exam-progress" hidden>
+        <div class="test-progress-fill" id="exam-progress-fill" style="width:0%"></div>
+      </div>
+      <p class="test-counter" id="exam-counter"></p>
+    </div>
+    <div class="test-body exam-body" id="exam-body" aria-live="polite"></div>
+    <div class="test-foot exam-foot" id="exam-foot"></div>
+  </div>
+</div>
+
+<!-- Ficha de estudio imprimible. A diferencia del resto de los modales, el cuerpo
+     de este NO es interfaz: `#cheat-sheet-content` es el documento en sí, y es lo
+     único que sobrevive al bloque `@media print` de styles.css. Por eso el
+     encabezado del documento (ramo, evaluación, fecha, barra de preparación) vive
+     dentro del contenido y no en la barra del modal: si estuviera fuera, no se
+     imprimiría. Lo arma app.js con lo que haya guardado del ramo activo. -->
+<div class="test-overlay sheet-overlay" id="cheat-sheet-overlay" hidden>
+  <div class="test-dialog sheet-dialog" id="cheat-sheet-modal" role="dialog" aria-modal="true"
+       aria-labelledby="cheat-sheet-modal-title">
+    <div class="test-head sheet-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">Ficha de estudio</p>
+        <button type="button" class="test-close" data-action="close-sheet"
+                aria-label="Cerrar la ficha y volver">×</button>
+      </div>
+      <h2 class="exam-title" id="cheat-sheet-modal-title">Ficha de repaso</h2>
+      <p class="test-counter" id="cheat-sheet-subtitle"></p>
+    </div>
+
+    <div class="test-body sheet-body">
+      <div class="sheet-doc" id="cheat-sheet-content"></div>
+    </div>
+
+    <div class="test-foot sheet-foot">
+      <span class="exam-foot-note">En el diálogo de impresión elige <b>“Guardar como PDF”</b> como destino.</span>
+      <span class="exam-foot-actions">
+        <button type="button" class="ghost-btn" data-action="close-sheet">Cerrar</button>
+        <button type="button" class="primary-btn" data-action="print-sheet">🖨️ Imprimir / Guardar como PDF</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- El pie nombra la carrera activa: lo reescribe applyCareerChrome(). -->
+<footer id="app-footer">
+  Agente de estudio · Ingeniería Comercial UC — herramienta de planificación para el curso. Tus archivos se leen en tu propio navegador; solo el texto de las preguntas se envía para el análisis del temario con Claude IA.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
