@@ -491,6 +491,18 @@ const sheetOverlayEl = document.getElementById('cheat-sheet-overlay');
 const sheetModalEl = document.getElementById('cheat-sheet-modal');
 const sheetSubtitleEl = document.getElementById('cheat-sheet-subtitle');
 const sheetContentEl = document.getElementById('cheat-sheet-content');
+const guideOverlayEl = document.getElementById('study-guide-overlay');
+const guideModalEl = document.getElementById('study-guide-modal');
+const guideTitleEl = document.getElementById('study-guide-title');
+const guideSubtitleEl = document.getElementById('study-guide-subtitle');
+const guideLoadingEl = document.getElementById('study-guide-loading');
+const guideLoadingTextEl = document.getElementById('study-guide-loading-text');
+const guideStepsEl = document.getElementById('study-guide-steps');
+const guideErrorEl = document.getElementById('study-guide-error');
+const guideErrorTextEl = document.getElementById('study-guide-error-text');
+const guideDocEl = document.getElementById('study-guide-doc');
+const guideFootEl = document.getElementById('study-guide-foot');
+const guidePautaBtn = document.getElementById('study-guide-pauta-btn');
 
 /* -------------------------------------------------------------------------
    3. ESTADO
@@ -555,9 +567,16 @@ function migratePastEvals(){
 // así que se borra cualquier resto en equipos que usaron esa versión.
 try{ localStorage.removeItem('anthropicApiKey'); }catch(e){ /* almacenamiento no disponible */ }
 
+// Devuelve si de verdad quedó guardado. Casi ningún llamador lo mira —para el
+// resto de los datos, no persistir es una molestia menor—, pero las guías de
+// estudio son grandes y caras de regenerar, así que ahí sí importa distinguir
+// "guardado" de "el almacenamiento está lleno" (ver `saveStoredGuide`).
 function savePastEvals(){
-  try{ localStorage.setItem(careerStoreKey('pastEvalsData'), JSON.stringify(pastEvalsData)); }
-  catch(e){ /* almacenamiento no disponible */ }
+  try{
+    localStorage.setItem(careerStoreKey('pastEvalsData'), JSON.stringify(pastEvalsData));
+    return true;
+  }
+  catch(e){ return false; }
 }
 
 /* --- Nota meta por ramo (localStorage) -------------------------------------
@@ -829,6 +848,7 @@ function resetAllProgress(){
   if(studySessionState) closeStudySession({ force: true });
   if(examState) closeExamSimulation({ force: true });
   if(sheetState) closeCheatSheet();
+  if(guideState) closeStudyGuide();
 
   practiceCache.clear();
   topicChatThreads.clear();
@@ -1303,6 +1323,9 @@ function getDiagnostic(course){
   // guardados antes no lo traen. Cada entrada es
   // { total, minutes, done, spentMin, startedAt, updatedAt }.
   if(!d.sessions) d.sessions = {};
+  // `guides` llegó con las guías imprimibles: los diagnósticos guardados antes
+  // no lo traen. Cada entrada es { guia, pauta, at }.
+  if(!d.guides) d.guides = {};
   return d;
 }
 
@@ -1714,6 +1737,7 @@ function releaseCareerState(){
   if(studySessionState) closeStudySession({ force: true });
   if(examState) closeExamSimulation({ force: true });
   if(sheetState) closeCheatSheet();
+  if(guideState) closeStudyGuide();
 
   practiceCache.clear();
   topicChatThreads.clear();
@@ -2524,14 +2548,14 @@ function questionCount(course){
 
 /* --- Modal del test -------------------------------------------------------- */
 
-// Nueve modales comparten el bloqueo del scroll del fondo (selección de
-// carrera, test, práctica, flashcards, peras y manzanas, chat de dudas, clase
-// guiada, simulacro y ficha imprimible). Cerrar uno solo lo suelta si no queda
-// ningún otro abierto.
+// Diez modales comparten el bloqueo del scroll del fondo (selección de carrera,
+// test, práctica, flashcards, peras y manzanas, chat de dudas, clase guiada,
+// simulacro, ficha imprimible y guía de estudio). Cerrar uno solo lo suelta si
+// no queda ningún otro abierto.
 function releaseModalLock(){
   if(testState || practiceState || flashcardsState || feynmanState ||
      topicChatState || studySessionState || examState || sheetState ||
-     careerSelectorOpen) return;
+     guideState || careerSelectorOpen) return;
   document.body.classList.remove('modal-open');
 }
 
@@ -2839,6 +2863,14 @@ function renderTopicCard(course, topic, plan){
                   data-flashcards="${escapeHtml(topic.id)}">🎴 Flashcards</button>
           <button type="button" class="btn-feynman"
                   data-feynman="${escapeHtml(topic.id)}">💡 Peras y manzanas</button>
+          <button type="button" class="btn-guide${hasStoredGuide(course, topic.id) ? ' has-guide' : ''}"
+                  data-guide="${escapeHtml(topic.id)}"
+                  title="${hasStoredGuide(course, topic.id)
+                    ? 'Abre la guía que ya generaste para este tema, lista para imprimir o guardar como PDF.'
+                    : 'Genera una guía imprimible con marco teórico, 10 ejercicios de nivel certamen y su pauta de solución.'}">${
+                    hasStoredGuide(course, topic.id)
+                      ? '📄 Ver mi guía (10 ejercicios)'
+                      : '📄 Generar Guía (10 Ejercicios)'}</button>
           <button type="button" class="btn-topic-chat"
                   data-topic-chat="${escapeHtml(topic.id)}">💬 Preguntar sobre este tema</button>
           <span class="topic-actions-note">${level === 'bajo'
@@ -3019,6 +3051,9 @@ if(diagnosticOutputEl) diagnosticOutputEl.addEventListener('click', ev => {
 
   const feynman = ev.target.closest('[data-feynman]');
   if(feynman){ openFeynman(activeCourse, feynman.getAttribute('data-feynman')); return; }
+
+  const guide = ev.target.closest('[data-guide]');
+  if(guide){ openStudyGuide(activeCourse, guide.getAttribute('data-guide')); return; }
 
   const chat = ev.target.closest('[data-topic-chat]');
   if(chat){ openTopicChat(activeCourse, chat.getAttribute('data-topic-chat')); return; }
@@ -5090,6 +5125,655 @@ function renderExportButton(){
 }
 
 /* -------------------------------------------------------------------------
+   8F-bis. GUÍA DE ESTUDIO POR TEMA (10 ejercicios de certamen + pauta)
+
+   La ficha de estudio (8F) resume el plan del ramo completo; esta es lo
+   contrario: un solo tema, en profundidad y con trabajo que hacer. Es el
+   documento que el alumno imprime para sentarse a resolver.
+
+   La generación son DOS llamadas encadenadas al mismo endpoint del Worker
+   (`/api/generate-study-guide`, con `stage`): primero el marco teórico y los 10
+   enunciados, después la pauta de esos mismos enunciados. Partirlo evita que la
+   respuesta se corte por el tope de tokens y deja mostrar avance real en vez de
+   un spinner de dos minutos.
+
+   El resultado se guarda en el registro del ramo (y por tanto en localStorage):
+   son dos llamadas largas, así que volver a abrir la guía no gasta ninguna. Solo
+   "Generar otra guía" pide una nueva.
+
+   El "PDF" lo produce el navegador, igual que en la ficha: `window.print()` más
+   el bloque `@media print` de styles.css, que deja en la hoja solo
+   `#study-guide-doc`. Por eso el encabezado institucional del documento se arma
+   aquí dentro y no en la barra del modal. Y como la pauta se imprime tal como se
+   ve, ocultarla antes de imprimir entrega la guía en limpio para trabajarla.
+   ------------------------------------------------------------------------- */
+
+const GUIDE_ENDPOINT = `${String(WORKER_URL).replace(/\/+$/, '')}/api/generate-study-guide`;
+
+// Cada etapa es una generación larga (miles de tokens), bastante más que
+// cualquier otro modo: medidas contra el Worker desplegado, la de enunciados
+// ronda los 35 s y la de la pauta entre 70 s y 2 min. El tope va sobre eso con
+// margen, porque agotarlo bota una guía que ya costó dos generaciones.
+const GUIDE_TIMEOUT_MS = 240000;
+const GUIDE_EXERCISES = 10;         // lo que se le pide al Worker
+const GUIDE_MAX_EXERCISES = 14;     // topes espejo de los del Worker
+const MAX_GUIDE_PARTS = 5;
+const MAX_GUIDE_PAST_QUESTIONS = 12;
+
+// { course, topicId, name, relevance, type, level, status, stage, guia, pauta,
+//   pautaOpen, error, controller }
+let guideState = null;
+
+/* --- Guía guardada (vive en el registro del ramo) ------------------------- */
+
+function getStoredGuide(course, topicId){
+  const d = getDiagnostic(course);
+  const entry = d && d.guides ? d.guides[topicId] : null;
+  if(!entry) return null;
+  const guia = normalizeGuideDoc(entry.guia);
+  if(!guia) return null;
+  // La pauta puede faltar si se guardó una guía a medias (la segunda llamada
+  // falló): la guía sirve igual, y el modal ofrece completarla.
+  return { guia, pauta: normalizeGuidePauta(entry.pauta, guia.ejercicios), at: entry.at || 0 };
+}
+
+function hasStoredGuide(course, topicId){
+  const d = getDiagnostic(course);
+  const entry = d && d.guides ? d.guides[topicId] : null;
+  return !!(entry && entry.guia && Array.isArray(entry.guia.ejercicios) && entry.guia.ejercicios.length);
+}
+
+// Guarda la guía del tema. Una guía completa son decenas de KB, así que aquí sí
+// se puede llenar el almacenamiento: si eso pasa, se botan las guías más viejas
+// del ramo (una a una, de la más antigua a la más nueva) y se reintenta. La
+// última que queda es siempre la recién generada, que es la que el alumno tiene
+// abierta.
+function saveStoredGuide(course, topicId, guia, pauta){
+  const d = getDiagnostic(course);
+  if(!d) return false;
+  d.guides[topicId] = { guia, pauta: pauta || null, at: Date.now() };
+
+  while(!savePastEvals()){
+    const older = Object.keys(d.guides)
+      .filter(id => id !== topicId)
+      .sort((a, b) => (d.guides[a].at || 0) - (d.guides[b].at || 0));
+    if(!older.length){
+      // Ni sola cabe: se deja en memoria para esta sesión y se avisa en consola.
+      console.warn('No hay espacio en localStorage para guardar la guía de estudio.');
+      return false;
+    }
+    delete d.guides[older[0]];
+  }
+  return true;
+}
+
+/* --- Saneado espejo del Worker --------------------------------------------
+   Lo que llega del Worker ya viene acotado, pero lo que sale de localStorage
+   puede ser de una versión anterior de la app o estar a medias. Se valida en los
+   dos casos por la misma puerta, así el render nunca tiene que defenderse. */
+
+function normalizeGuideExercises(raw){
+  if(!Array.isArray(raw)) return [];
+  const out = [];
+  for(const item of raw){
+    if(out.length >= GUIDE_MAX_EXERCISES) break;
+    if(!item || typeof item !== 'object') continue;
+
+    const contexto = String(item.contexto || '').trim();
+    if(!contexto) continue;
+
+    const partes = [];
+    for(const p of (Array.isArray(item.partes) ? item.partes : [])){
+      if(partes.length >= MAX_GUIDE_PARTS) break;
+      if(!p || typeof p !== 'object') continue;
+      const enunciado = String(p.enunciado || '').trim();
+      if(!enunciado) continue;
+      partes.push({
+        letra: String(p.letra || String.fromCharCode(97 + partes.length)).trim().slice(0, 1),
+        enunciado,
+        puntaje: Number.isFinite(Number(p.puntaje)) ? Math.round(Number(p.puntaje)) : 0
+      });
+    }
+    if(!partes.length) continue;
+
+    out.push({
+      numero: out.length + 1,
+      titulo: String(item.titulo || `Ejercicio ${out.length + 1}`).trim(),
+      origen: item.origen === 'pasada' ? 'pasada' : 'original',
+      contexto,
+      partes,
+      puntaje: partes.reduce((n, p) => n + p.puntaje, 0)
+    });
+  }
+  return out;
+}
+
+function normalizeGuideDoc(raw){
+  if(!raw || typeof raw !== 'object') return null;
+  const ejercicios = normalizeGuideExercises(raw.ejercicios);
+  if(!ejercicios.length) return null;
+
+  const marco = (raw.marcoTeorico && typeof raw.marcoTeorico === 'object') ? raw.marcoTeorico : {};
+  const conceptos = (Array.isArray(marco.conceptos) ? marco.conceptos : [])
+    .filter(c => c && c.nombre && c.explicacion)
+    .map(c => ({ nombre: String(c.nombre).trim(), explicacion: String(c.explicacion).trim() }));
+  const formulas = (Array.isArray(marco.formulas) ? marco.formulas : [])
+    .filter(f => f && f.nombre && f.expresion)
+    .map(f => ({
+      nombre: String(f.nombre).trim(),
+      expresion: String(f.expresion).trim(),
+      cuandoUsar: String(f.cuandoUsar || '').trim()
+    }));
+
+  return {
+    titulo: String(raw.titulo || 'Guía de estudio').trim(),
+    resumen: String(raw.resumen || '').trim(),
+    marcoTeorico: { conceptos, formulas },
+    ejercicios
+  };
+}
+
+// La pauta se ancla a los ejercicios: se recorre la guía, no la respuesta. Una
+// pauta que no cubra ningún ejercicio se descarta entera.
+function normalizeGuidePauta(raw, ejercicios){
+  if(!Array.isArray(raw) || !Array.isArray(ejercicios) || !ejercicios.length) return null;
+
+  const byNumber = new Map();
+  raw.forEach((item, i) => {
+    if(!item || typeof item !== 'object') return;
+    const n = Number.isFinite(Number(item.numero)) ? Math.round(Number(item.numero)) : i + 1;
+    if(!byNumber.has(n)) byNumber.set(n, item);
+  });
+
+  let conDesarrollo = 0;
+  const pauta = ejercicios.map(ej => {
+    const item = byNumber.get(ej.numero);
+    const partesRaw = (item && Array.isArray(item.partes)) ? item.partes : [];
+    const porLetra = new Map();
+    partesRaw.forEach((p, i) => {
+      if(!p || typeof p !== 'object') return;
+      const letra = String(p.letra || String.fromCharCode(97 + i)).trim().slice(0, 1);
+      if(!porLetra.has(letra)) porLetra.set(letra, p);
+    });
+
+    const partes = ej.partes.map((parte, i) => {
+      const p = porLetra.get(parte.letra) || partesRaw[i];
+      const desarrollo = p ? String(p.desarrollo || '').trim() : '';
+      if(desarrollo) conDesarrollo++;
+      return {
+        letra: parte.letra,
+        desarrollo,
+        respuesta: p ? String(p.respuesta || '').trim() : ''
+      };
+    });
+
+    const criterios = ((item && Array.isArray(item.criterios)) ? item.criterios : [])
+      .map(c => String(c || '').trim())
+      .filter(Boolean);
+
+    return { numero: ej.numero, partes, criterios };
+  });
+
+  return conDesarrollo ? pauta : null;
+}
+
+/* --- Llamada al Worker ----------------------------------------------------- */
+
+// Una etapa de la generación. `stage` es "ejercicios" o "pauta"; `extra` lleva
+// lo que solo necesita esa etapa (los enunciados ya generados, en la segunda).
+async function requestGuideStage(course, topic, stage, extra, signal){
+  if(!WORKER_URL || WORKER_URL.includes('tu-worker')){
+    throw new Error('El generador de guías todavía no está configurado en este sitio.');
+  }
+
+  const payload = Object.assign({
+    action: 'generateStudyGuide',
+    stage,
+    topicTitle: topic.name,
+    courseName: courseForAi(course),
+    career: careerInfo().label,
+    topicRelevance: topic.relevance,
+    topicType: topic.type,
+    tipoEvaluacion: examTypeForAi(course)
+  }, extra || {});
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GUIDE_TIMEOUT_MS);
+  if(signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+
+  let response;
+  try{
+    response = await fetch(GUIDE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+  }catch(err){
+    if(signal && signal.aborted) throw err;              // lo cerró el usuario
+    throw new Error(err && err.name === 'AbortError'
+      ? 'La guía tardó demasiado en generarse. Inténtalo de nuevo.'
+      : 'No se pudo conectar con el generador de guías. Revisa tu conexión a internet.');
+  }finally{
+    clearTimeout(timer);
+  }
+
+  let data = null;
+  let bodyFailed = false;
+  try{ data = await response.json(); }catch(e){ bodyFailed = true; }
+
+  if(!response.ok) throw new Error((data && data.error) || workerErrorMessage(response.status));
+
+  // Una guía son decenas de KB: si la conexión se corta mientras llega el cuerpo,
+  // `.json()` falla con la respuesta ya en 200. Eso es un problema de red, no una
+  // guía vacía, y decírselo así al alumno le ahorra reintentos que no van a
+  // funcionar hasta que la conexión mejore.
+  if(bodyFailed){
+    throw new Error('La respuesta llegó incompleta. Revisa tu conexión y vuelve a intentarlo.');
+  }
+  return data || {};
+}
+
+/* --- Modal ---------------------------------------------------------------- */
+
+function openStudyGuide(course, topicId, { regenerate = false } = {}){
+  const ai = getAiAnalysis(course);
+  const topic = ai && ai.topics.find(t => t.id === topicId);
+  if(!topic || !guideOverlayEl) return;
+
+  if(guideState && guideState.controller) guideState.controller.abort();
+
+  const stored = regenerate ? null : getStoredGuide(course, topicId);
+  guideState = {
+    course,
+    topicId,
+    name: topic.name,
+    relevance: topic.relevance,
+    type: topic.type,
+    level: topicLevel(course, topic),
+    status: stored ? 'ready' : 'loading',
+    stage: stored ? 'listo' : 'ejercicios',
+    guia: stored ? stored.guia : null,
+    pauta: stored ? stored.pauta : null,
+    // La pauta arranca oculta siempre: la guía es para intentarla primero.
+    pautaOpen: false,
+    error: '',
+    controller: stored ? null : new AbortController()
+  };
+
+  guideOverlayEl.hidden = false;
+  document.body.classList.add('modal-open');
+  document.addEventListener('keydown', onStudyGuideKeydown);
+  renderStudyGuide();
+
+  if(stored) return;
+  generateStudyGuide(course, topic, guideState);
+}
+
+// Las dos etapas encadenadas. Se le pasa el estado con el que arrancó para poder
+// abandonar en silencio si el alumno cerró el modal o pidió otro tema.
+function generateStudyGuide(course, topic, state){
+  const alive = () => guideState === state && !state.controller.signal.aborted;
+
+  requestGuideStage(course, topic, 'ejercicios', {
+    numQuestions: GUIDE_EXERCISES,
+    // Los ejercicios reales del ramo que hablan de este tema: son la fuente
+    // prioritaria de la guía.
+    pastQuestions: pastQuestionsForTopic(course, topic.name, MAX_GUIDE_PAST_QUESTIONS)
+  }, state.controller.signal)
+    .then(data => {
+      if(!alive()) return null;
+      const guia = normalizeGuideDoc(data && data.guia);
+      if(!guia) throw new Error('Los ejercicios llegaron vacíos. Inténtalo de nuevo.');
+
+      // La mitad cara ya está: se guarda antes de pedir la pauta, para que
+      // cerrar la pestaña (o un fallo en la segunda llamada) no obligue a
+      // volver a generar los enunciados. En pantalla todavía no se muestra —el
+      // documento se pinta una sola vez, al final— pero el paso sí avanza.
+      state.guia = guia;
+      state.stage = 'pauta';
+      saveStoredGuide(course, state.topicId, guia, null);
+      renderStudyGuide();
+
+      return requestGuideStage(course, topic, 'pauta', {
+        ejercicios: guia.ejercicios
+      }, state.controller.signal);
+    })
+    .then(data => {
+      if(!data || !alive()) return;
+      state.pauta = normalizeGuidePauta(data && data.pauta, state.guia.ejercicios);
+      state.status = 'ready';
+      state.stage = 'listo';
+      state.controller = null;
+      saveStoredGuide(course, state.topicId, state.guia, state.pauta);
+      renderStudyGuide();
+      renderDiagnostic();   // el botón de la tarjeta pasa a "Ver mi guía"
+    })
+    .catch(err => {
+      if(guideState !== state || state.controller.signal.aborted) return;
+      // Si la primera etapa sí llegó, la guía se publica sin pauta en vez de
+      // perderse: los enunciados son la mitad que cuesta más generar.
+      if(state.guia){
+        state.status = 'ready';
+        state.stage = 'sin-pauta';
+        state.pauta = null;
+        state.controller = null;
+        renderStudyGuide();
+        renderDiagnostic();
+        return;
+      }
+      state.status = 'error';
+      state.error = err.message || 'No se pudo generar la guía de este tema.';
+      state.controller = null;
+      renderStudyGuide();
+    });
+}
+
+function closeStudyGuide(){
+  if(!guideState) return;
+  if(guideState.controller) guideState.controller.abort();
+  guideState = null;
+  guideOverlayEl.hidden = true;
+  document.body.classList.remove('guide-open', 'guide-pauta-open');
+  releaseModalLock();
+  document.removeEventListener('keydown', onStudyGuideKeydown);
+}
+
+function onStudyGuideKeydown(ev){
+  if(!guideState) return;
+  if(ev.key === 'Escape'){ ev.preventDefault(); closeStudyGuide(); }
+}
+
+/* --- Render ---------------------------------------------------------------- */
+
+function guideDateLabel(at){
+  const d = at ? new Date(at) : new Date();
+  try{
+    return d.toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' });
+  }catch(e){
+    return d.toLocaleDateString();   // locale no disponible en el equipo
+  }
+}
+
+// Texto del modelo con saltos de línea → párrafos, ya escapado. Los desarrollos
+// de la pauta vienen con un paso por línea, así que el salto es información.
+function guideParagraphs(text, cls){
+  return String(text || '').split('\n')
+    .map(t => t.trim())
+    .filter(Boolean)
+    .map(t => `<p class="${cls}">${escapeHtml(t)}</p>`)
+    .join('');
+}
+
+function renderStudyGuide(){
+  if(!guideState || !guideModalEl) return;
+  const s = guideState;
+
+  guideTitleEl.textContent = s.name;
+  guideModalEl.classList.remove('lvl-alto', 'lvl-medio', 'lvl-bajo');
+  guideModalEl.classList.add(`lvl-${s.level}`);
+
+  const ready = s.status === 'ready' && !!s.guia;
+  guideErrorEl.hidden = s.status !== 'error';
+  guideDocEl.hidden   = !ready;
+  guideFootEl.hidden  = !ready;
+  guideLoadingEl.hidden = ready || s.status !== 'loading';
+
+  // `guide-open` es lo que activa el bloque @media print de esta guía: sin ella
+  // abierta, imprimir la página sigue funcionando como en cualquier sitio.
+  document.body.classList.toggle('guide-open', ready);
+
+  if(s.status === 'error'){
+    guideSubtitleEl.textContent = '';
+    guideErrorTextEl.textContent = s.error;
+    return;
+  }
+
+  if(!ready){
+    const enPauta = s.stage === 'pauta';
+    guideSubtitleEl.textContent = enPauta
+      ? 'Paso 2 de 2 · escribiendo la pauta de solución...'
+      : 'Paso 1 de 2 · redactando los ejercicios...';
+    guideLoadingTextEl.textContent = enPauta
+      ? 'Escribiendo la pauta de solución...'
+      : 'Redactando los 10 ejercicios...';
+    if(guideStepsEl){
+      // Los dos primeros hitos salen de la misma llamada, así que avanzan juntos.
+      guideStepsEl.querySelectorAll('.guide-step').forEach(li => {
+        const step = Number(li.getAttribute('data-step'));
+        li.classList.toggle('done', enPauta && step <= 2);
+        li.classList.toggle('active', enPauta ? step === 3 : step <= 2);
+      });
+    }
+    return;
+  }
+
+  const total = s.guia.ejercicios.length;
+  const pasadas = s.guia.ejercicios.filter(e => e.origen === 'pasada').length;
+  const nuevos = total - pasadas;
+  guideSubtitleEl.textContent =
+    `${total} ejercicio${total === 1 ? '' : 's'} de nivel certamen · ` +
+    `${pasadas} de tus evaluaciones pasadas · ${nuevos} original${nuevos === 1 ? '' : 'es'}` +
+    (s.pauta ? ' · con pauta de solución' : ' · sin pauta (falló el segundo paso)');
+
+  renderGuideDoc(s);
+  renderGuidePautaToggle(s);
+
+  if(guideModalEl) guideModalEl.scrollTop = 0;
+}
+
+// El botón de la pauta y la visibilidad de su sección. Se llama también al
+// alternarla, así que no rearma el documento entero.
+function renderGuidePautaToggle(s){
+  const section = guideDocEl.querySelector('#study-guide-pauta');
+  if(section) section.hidden = !s.pautaOpen;
+  // Con la pauta a la vista, al imprimir no se deja espacio para desarrollar a
+  // mano: esa copia es para estudiar, no para resolver (ver @media print).
+  document.body.classList.toggle('guide-pauta-open', !!s.pautaOpen);
+
+  if(!guidePautaBtn) return;
+  const has = !!s.pauta;
+  guidePautaBtn.disabled = !has;
+  guidePautaBtn.setAttribute('aria-expanded', String(has && s.pautaOpen));
+  guidePautaBtn.textContent = !has
+    ? '👁️ Pauta no disponible'
+    : (s.pautaOpen ? '🙈 Ocultar pauta de solución' : '👁️ Mostrar pauta de solución');
+  guidePautaBtn.title = !has
+    ? 'La pauta no se generó. Usa "Generar otra guía" para volver a intentarlo.'
+    : (s.pautaOpen
+        ? 'Oculta la pauta. Lo que se imprime es lo que ves: sin ella, sale la guía en limpio.'
+        : 'Muestra la solución paso a paso y los criterios de corrección de los 10 ejercicios.');
+}
+
+function renderGuideDoc(s){
+  const g = s.guia;
+  const info = careerInfo();
+  const et = EXAM_TYPES[examKeyForWeight(getEvalWeight(s.course))];
+  const pasadas = g.ejercicios.filter(e => e.origen === 'pasada').length;
+  const puntaje = g.ejercicios.reduce((n, e) => n + e.puntaje, 0);
+
+  const facts = [
+    ['Ejercicios', String(g.ejercicios.length)],
+    ['De evaluaciones pasadas', String(pasadas)],
+    ['Originales', String(g.ejercicios.length - pasadas)],
+    ['Puntaje total', `${puntaje} pts`],
+    ['Emitida', guideDateLabel()]
+  ];
+
+  guideDocEl.innerHTML = `
+    <header class="guide-header">
+      <p class="guide-inst">${escapeHtml(info.faculty)}</p>
+      <p class="guide-eyebrow">${escapeHtml(s.course)} · ${escapeHtml(et.label)} · Guía de ejercicios</p>
+      <h1 class="guide-doc-title">${escapeHtml(g.titulo)}</h1>
+      ${g.resumen ? `<p class="guide-lead">${escapeHtml(g.resumen)}</p>` : ''}
+      <div class="guide-facts">
+        ${facts.map(([k, v]) => `
+          <p class="guide-fact">
+            <span class="guide-fact-k">${escapeHtml(k)}</span>
+            <span class="guide-fact-v">${escapeHtml(v)}</span>
+          </p>`).join('')}
+      </div>
+    </header>
+
+    ${renderGuideMarco(g.marcoTeorico)}
+    ${renderGuideEjercicios(g.ejercicios)}
+    ${renderGuidePauta(s)}
+
+    <footer class="guide-footer">
+      Agente de estudio · ${escapeHtml(info.label)} UC — guía generada con <b>Claude IA</b>
+      el ${escapeHtml(guideDateLabel())} a partir de las evaluaciones pasadas de
+      ${escapeHtml(s.course)} guardadas en este navegador. Los ejercicios marcados como
+      originales son simulaciones del nivel del certamen, no preguntas oficiales del curso.
+    </footer>`;
+}
+
+function renderGuideMarco(marco){
+  const hasContent = marco.conceptos.length || marco.formulas.length;
+  if(!hasContent) return '';
+
+  return `
+    <section class="guide-section">
+      <h2 class="guide-h2"><span class="guide-h2-num">I</span>Formulario y marco teórico clave</h2>
+      <p class="guide-section-note">Lo que necesitas tener a mano para resolver la guía. No trae
+      la solución de ningún ejercicio: es la caja de herramientas, no la pauta.</p>
+
+      ${marco.formulas.length ? `
+        <div class="guide-formulas">
+          ${marco.formulas.map(f => `
+            <div class="guide-formula">
+              <p class="guide-formula-name">${escapeHtml(f.nombre)}</p>
+              <p class="guide-formula-expr">${escapeHtml(f.expresion)}</p>
+              ${f.cuandoUsar ? `<p class="guide-formula-when">${escapeHtml(f.cuandoUsar)}</p>` : ''}
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${marco.conceptos.length ? `
+        <div class="guide-concepts">
+          ${marco.conceptos.map(c => `
+            <div class="guide-concept">
+              <p class="guide-concept-name">${escapeHtml(c.nombre)}</p>
+              ${guideParagraphs(c.explicacion, 'guide-concept-text')}
+            </div>`).join('')}
+        </div>` : ''}
+    </section>`;
+}
+
+function renderGuideEjercicios(ejercicios){
+  return `
+    <section class="guide-section guide-break">
+      <h2 class="guide-h2"><span class="guide-h2-num">II</span>Ejercicios</h2>
+      <p class="guide-section-note">Resuélvelos con lápiz y papel antes de mirar la pauta.
+      Los marcados como <b>de evaluación pasada</b> salen del material que subiste a este ramo;
+      los <b>originales</b> están escritos con el mismo formato y nivel de exigencia.</p>
+
+      ${ejercicios.map(ej => `
+        <article class="guide-ex">
+          <div class="guide-ex-head">
+            <span class="guide-ex-num">${ej.numero}</span>
+            <span class="guide-ex-title">${escapeHtml(ej.titulo)}</span>
+            <span class="guide-ex-tags">
+              <span class="guide-tag ${ej.origen === 'pasada' ? 'is-past' : 'is-new'}">${
+                ej.origen === 'pasada' ? 'De evaluación pasada' : 'Original'}</span>
+              ${ej.puntaje ? `<span class="guide-tag is-pts">${ej.puntaje} pts</span>` : ''}
+            </span>
+          </div>
+          <div class="guide-ex-context">${guideParagraphs(ej.contexto, 'guide-ex-text')}</div>
+          <ol class="guide-parts">
+            ${ej.partes.map(p => `
+              <li class="guide-part">
+                <span class="guide-part-letter">${escapeHtml(p.letra)})</span>
+                <span class="guide-part-text">${escapeHtml(p.enunciado)}${
+                  p.puntaje ? ` <span class="guide-part-pts">(${p.puntaje} pts)</span>` : ''}</span>
+              </li>`).join('')}
+          </ol>
+          <div class="guide-work" aria-hidden="true"></div>
+        </article>`).join('')}
+    </section>`;
+}
+
+// La pauta va siempre en el documento (para que imprimirla no exija rearmarlo),
+// pero nace con `hidden`: la muestra el botón del pie, y al imprimir sale solo si
+// está a la vista.
+function renderGuidePauta(s){
+  if(!s.pauta){
+    return `
+      <section class="guide-section guide-break guide-pauta" id="study-guide-pauta" hidden>
+        <h2 class="guide-h2"><span class="guide-h2-num">III</span>Pauta de solución paso a paso</h2>
+        <p class="guide-section-note">La pauta de esta guía no alcanzó a generarse.
+        Usa “Generar otra guía” para volver a intentarlo.</p>
+      </section>`;
+  }
+
+  const porNumero = new Map(s.guia.ejercicios.map(e => [e.numero, e]));
+
+  return `
+    <section class="guide-section guide-break guide-pauta" id="study-guide-pauta" hidden>
+      <h2 class="guide-h2"><span class="guide-h2-num">III</span>Pauta de solución paso a paso</h2>
+      <p class="guide-section-note">Desarrollo completo de cada parte y criterios de corrección.
+      Compárala con tu desarrollo, no solo con tu resultado: en el certamen el puntaje está en el
+      procedimiento.</p>
+
+      ${s.pauta.map(p => {
+        const ej = porNumero.get(p.numero);
+        return `
+        <article class="guide-sol">
+          <div class="guide-ex-head">
+            <span class="guide-ex-num">${p.numero}</span>
+            <span class="guide-ex-title">${escapeHtml(ej ? ej.titulo : `Ejercicio ${p.numero}`)}</span>
+          </div>
+          ${p.partes.map(parte => `
+            <div class="guide-sol-part">
+              <p class="guide-sol-letter">Parte ${escapeHtml(parte.letra)})</p>
+              ${parte.desarrollo
+                ? guideParagraphs(parte.desarrollo, 'guide-sol-step')
+                : '<p class="guide-sol-step guide-sol-missing">Esta parte no quedó desarrollada en la pauta.</p>'}
+              ${parte.respuesta ? `
+                <p class="guide-sol-answer"><span class="guide-sol-answer-k">Respuesta</span>
+                <span class="guide-sol-answer-v">${escapeHtml(parte.respuesta)}</span></p>` : ''}
+            </div>`).join('')}
+          ${p.criterios.length ? `
+            <div class="guide-criteria">
+              <p class="guide-criteria-title">Criterios de corrección</p>
+              <ul class="guide-criteria-list">
+                ${p.criterios.map(c => `<li>${escapeHtml(c)}</li>`).join('')}
+              </ul>
+            </div>` : ''}
+        </article>`;
+      }).join('')}
+    </section>`;
+}
+
+/* --- Acciones -------------------------------------------------------------- */
+
+if(guideModalEl) guideModalEl.addEventListener('click', ev => {
+  const btn = ev.target.closest('[data-action]');
+  if(!btn || !guideState) return;
+
+  switch(btn.getAttribute('data-action')){
+    case 'close-guide':
+      closeStudyGuide();
+      break;
+
+    case 'retry-guide':
+    case 'regenerate-guide':
+      openStudyGuide(guideState.course, guideState.topicId, { regenerate: true });
+      break;
+
+    case 'toggle-pauta':
+      if(!guideState.pauta) break;
+      guideState.pautaOpen = !guideState.pautaOpen;
+      renderGuidePautaToggle(guideState);
+      break;
+
+    // El PDF lo genera el navegador: en el diálogo de impresión el alumno elige
+    // "Guardar como PDF" como destino.
+    case 'print-guide':
+      window.print();
+      break;
+  }
+});
+
+/* -------------------------------------------------------------------------
    8G. MICRO-CHAT DE CONTEXTO (dudas sueltas por tema)
 
    El resto de las herramientas del tema entregan material armado de una vez
@@ -6112,6 +6796,9 @@ function renderAll(){
   if(examState && examState.course !== activeCourse) closeExamSimulation({ force: true });
   // La ficha es una foto de un ramo: al cambiar de ramo deja de corresponder.
   if(sheetState && sheetState.course !== activeCourse) closeCheatSheet();
+  // La guía es de un tema de este ramo, y generarla puede seguir en curso:
+  // cambiar de ramo la cierra y aborta lo que esté pidiendo.
+  if(guideState && guideState.course !== activeCourse) closeStudyGuide();
   renderDrawers();
   renderPicker();
   renderCard();
@@ -6275,9 +6962,11 @@ clearEvalsBtn.addEventListener('click', () => {
   if(studySessionState && studySessionState.course === activeCourse) closeStudySession({ force: true });
   if(examState && examState.course === activeCourse) closeExamSimulation({ force: true });
   if(sheetState && sheetState.course === activeCourse) closeCheatSheet();
+  if(guideState && guideState.course === activeCourse) closeStudyGuide();
   // Los temas de este ramo dejan de existir: su práctica cacheada y las dudas
   // conversadas sobre ellos también.
-  // Los mazos de flashcards viven dentro del registro, así que se van con él.
+  // Los mazos de flashcards y las guías de estudio viven dentro del registro,
+  // así que se van con él.
   clearPracticeCache(activeCourse);
   clearTopicChatThreads(activeCourse);
   delete pastEvalsData[activeCourse];

@@ -580,6 +580,68 @@
   </div>
 </div>
 
+<!-- Guía de estudio por tema: 10 ejercicios de nivel certamen con su pauta.
+     Comparte el patrón de la ficha imprimible (#cheat-sheet-modal): `#study-guide-doc`
+     es el documento en sí y es lo único que sobrevive al bloque `@media print`,
+     así que su encabezado institucional (carrera, ramo, tema, fecha) vive dentro
+     del documento y no en la barra del modal. La pauta se despliega con
+     `data-action="toggle-pauta"` y al imprimir sale o no según ese mismo estado:
+     una guía para trabajar se imprime sin respuestas. -->
+<div class="test-overlay guide-overlay" id="study-guide-overlay" hidden>
+  <div class="test-dialog guide-dialog" id="study-guide-modal" role="dialog" aria-modal="true"
+       aria-labelledby="study-guide-title">
+    <div class="test-head guide-head">
+      <div class="test-head-row">
+        <p class="test-eyebrow">📄 Guía de estudio</p>
+        <button type="button" class="test-close" data-action="close-guide"
+                aria-label="Cerrar la guía y volver">×</button>
+      </div>
+      <h2 class="practice-topic-title" id="study-guide-title"></h2>
+      <p class="test-counter" id="study-guide-subtitle"></p>
+    </div>
+
+    <div class="test-body guide-body" id="study-guide-body">
+      <!-- Cargando: la generación son dos llamadas encadenadas (enunciados y
+           después pauta), así que el texto del paso lo reescribe app.js. -->
+      <div class="practice-loading" id="study-guide-loading" aria-live="polite">
+        <span class="ai-spinner" aria-hidden="true"></span>
+        <p class="practice-loading-text" id="study-guide-loading-text">Redactando los ejercicios...</p>
+        <p class="test-hint" id="study-guide-loading-hint">Claude está armando una guía completa a partir
+        de tus evaluaciones pasadas: marco teórico, 10 ejercicios de nivel certamen y la pauta de todos.
+        Es lo más largo que genera la app: suele tardar entre 2 y 3 minutos. No cierres esta ventana.</p>
+        <ol class="guide-steps" id="study-guide-steps">
+          <li class="guide-step" data-step="1">Formulario y marco teórico</li>
+          <li class="guide-step" data-step="2">10 ejercicios de certamen</li>
+          <li class="guide-step" data-step="3">Pauta de solución paso a paso</li>
+        </ol>
+      </div>
+
+      <div class="practice-error" id="study-guide-error" hidden>
+        <p class="ai-error" id="study-guide-error-text"></p>
+        <div class="eval-actions">
+          <button type="button" class="ghost-btn" data-action="close-guide">Cerrar</button>
+          <button type="button" class="primary-btn" data-action="retry-guide">Reintentar</button>
+        </div>
+      </div>
+
+      <!-- El documento. Lo arma app.js entero; al imprimir es lo único que queda. -->
+      <div class="guide-doc" id="study-guide-doc" hidden></div>
+    </div>
+
+    <div class="test-foot guide-foot" id="study-guide-foot" hidden>
+      <span class="exam-foot-note">En el diálogo de impresión elige <b>“Guardar como PDF”</b> como destino.
+      Lo que se imprime es lo que ves: si la pauta está oculta, sale la guía en limpio para trabajarla.</span>
+      <span class="exam-foot-actions">
+        <button type="button" class="ghost-btn" data-action="regenerate-guide"
+                title="Descarta esta guía y pide otros 10 ejercicios del mismo tema.">🔄 Generar otra guía</button>
+        <button type="button" class="ghost-btn" id="study-guide-pauta-btn" data-action="toggle-pauta"
+                aria-expanded="false" aria-controls="study-guide-pauta">👁️ Mostrar pauta de solución</button>
+        <button type="button" class="primary-btn" data-action="print-guide">🖨️ Imprimir / Descargar PDF</button>
+      </span>
+    </div>
+  </div>
+</div>
+
 <!-- El pie nombra la carrera activa: lo reescribe applyCareerChrome(). -->
 <footer id="app-footer">
   Agente de estudio · Ingeniería Comercial UC — herramienta de planificación para el curso. Tus archivos se leen en tu propio navegador; solo el texto de las preguntas se envía para el análisis del temario con Claude IA.
