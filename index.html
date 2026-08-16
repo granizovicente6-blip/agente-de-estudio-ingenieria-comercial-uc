@@ -524,6 +524,14 @@
       <div class="session-actions">
         <button type="button" class="session-ghost" id="study-session-skip"
                 data-action="next-session-phase">Saltar a la siguiente fase →</button>
+        <!-- Atajo para el que ya sabe el tema: cierra el programa completo del
+             tema (🟢 dominado) sin pasar por las tres fases. Va en verde porque
+             es lo que hace, y no es "ghost" como los otros dos: es la única
+             acción del pie que deja algo guardado. -->
+        <button type="button" class="session-pass" id="study-session-pass"
+                data-action="pass-session"
+                title="Marca este tema como dominado y cierra la clase. Puedes volver a bajarle el nivel desde la tarjeta del tema.">
+          ✅ Dar lección por pasada</button>
         <button type="button" class="session-ghost is-end"
                 data-action="finish-session">Concluir sesión</button>
         <span class="session-note" id="study-session-note">Enter envía; Shift+Enter agrega una línea.
@@ -654,6 +662,12 @@
     </div>
   </div>
 </div>
+
+<!-- Avisos breves de la aplicación. Vive fuera de todo modal y por encima de
+     ellos (los overlays van en z-index:50), porque el aviso más importante que
+     tiene que dar —"la lección quedó marcada"— aparece justo cuando el modal se
+     está cerrando. Lo llena showToast() en app.js. -->
+<div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
 
 <!-- El pie nombra la carrera activa: lo reescribe applyCareerChrome(). -->
 <footer class="site-footer" id="app-footer">

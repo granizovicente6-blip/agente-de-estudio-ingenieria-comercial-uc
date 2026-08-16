@@ -477,6 +477,7 @@ const sessionFormEl = document.getElementById('study-session-form');
 const sessionInputEl = document.getElementById('study-session-input');
 const sessionSendBtn = document.getElementById('study-session-send');
 const sessionSkipBtn = document.getElementById('study-session-skip');
+const sessionPassBtn = document.getElementById('study-session-pass');
 const examLaunchEl = document.getElementById('exam-launch');
 const examLaunchNoteEl = document.getElementById('exam-launch-note');
 const startExamBtn = document.getElementById('btn-start-exam');
@@ -506,6 +507,7 @@ const guideErrorTextEl = document.getElementById('study-guide-error-text');
 const guideDocEl = document.getElementById('study-guide-doc');
 const guideFootEl = document.getElementById('study-guide-foot');
 const guidePautaBtn = document.getElementById('study-guide-pauta-btn');
+const toastStackEl = document.getElementById('toast-stack');
 
 /* -------------------------------------------------------------------------
    3. ESTADO
@@ -1940,6 +1942,42 @@ function formatHoursLabel(h){
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c =>
     ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+/* --- Avisos breves ----------------------------------------------------------
+   Para lo que pasó y ya no se ve: dar una lección por pasada cierra el modal, y
+   sin este aviso el alumno se quedaría mirando el tablero sin saber si quedó
+   registrado. No reemplaza a lo que la interfaz muestra por su cuenta (el tema
+   verde, la barra más alta): lo nombra mientras se ve el cambio.
+
+   `html` va sin escapar a propósito —los llamadores arman el mensaje con <b> y
+   escapan lo suyo con escapeHtml—, igual que el resto de los render de la app.
+   --------------------------------------------------------------------------- */
+const TOAST_MS = 5200;
+
+function showToast(html, tone = 'ok'){
+  if(!toastStackEl) return null;
+
+  const el = document.createElement('div');
+  el.className = `toast is-${tone}`;
+  el.innerHTML = html;
+
+  // Se puede sacar de encima con un clic: el aviso llega abajo al centro y en
+  // pantallas chicas queda sobre el contenido.
+  let timer = 0;
+  const dismiss = () => {
+    if(!el.isConnected) return;
+    clearTimeout(timer);
+    el.classList.add('is-out');
+    setTimeout(() => el.remove(), 200);
+  };
+  el.addEventListener('click', dismiss);
+  timer = setTimeout(dismiss, TOAST_MS);
+
+  toastStackEl.appendChild(el);
+  // Tres avisos apilados ya tapan media pantalla: se van los más viejos.
+  while(toastStackEl.children.length > 3) toastStackEl.firstElementChild.remove();
+  return el;
 }
 
 // Estado limpio mientras el ramo no tiene temario analizado: en vez de un plan
@@ -6631,6 +6669,75 @@ function applySessionVerdict(s, verdict){
   }
 }
 
+/* --- Dar la lección por pasada ----------------------------------------------
+   El atajo del que ya sabe el tema. Deja el tema exactamente donde lo dejaría
+   terminar el programa completo (🟢 dominado, pasos marcados, practicado), sin
+   pasar por las tres fases. No es una trampa al plan: el semáforo es del alumno
+   —la tarjeta del tema tiene el selector de nivel para volver atrás— y el
+   presupuesto de horas del ramo se recalcula solo con el nivel nuevo.
+
+   Se separa del modal a propósito: lo único que necesita es el ramo y el tema,
+   así que sirve igual si algún día se agrega el mismo botón a la tarjeta. */
+function markTopicMastered(course, topicId){
+  const ai = getAiAnalysis(course);
+  const topic = ai && ai.topics.find(t => t.id === topicId);
+  const d = getDiagnostic(course);
+  if(!topic || !d) return false;
+
+  // El programa del tema se cierra entero: dar la lección por pasada es decir
+  // que las sesiones que quedaban ya no hacen falta. Se pide ANTES de tocar el
+  // nivel porque el programa se dimensiona con el esfuerzo del tema, y ese
+  // cálculo depende del nivel actual.
+  const program = ensureSessionProgram(course, topicId);
+  if(program){
+    program.done = program.total;
+    program.updatedAt = Date.now();
+  }
+
+  d.levels[topicId] = 'bajo';                       // 🟢 dominado
+  if(Array.isArray(topic.studySteps) && topic.studySteps.length){
+    d.steps[topicId] = topic.studySteps.map(() => true);
+  }
+  savePastEvals();
+
+  // Mismo cierre que el veredicto logrado del profesor: el tema cuenta como
+  // practicado. (markPracticed guarda por su cuenta.)
+  markPracticed(course, topicId, { hits: 1, total: 1 });
+  return true;
+}
+
+// El botón del pie de la clase guiada.
+function passStudySessionAsMastered(){
+  const s = studySessionState;
+  if(!s || s.pending) return;
+
+  const before = readinessPct(s.course);
+  if(!markTopicMastered(s.course, s.topicId)){
+    showToast('No se pudo marcar la lección: este tema ya no está en el plan del ramo.', 'error');
+    return;
+  }
+  const after = readinessPct(s.course);
+
+  // Se leen antes de cerrar: `closeStudySession` borra el estado de la clase.
+  const { course, name } = s;
+
+  // Sin preguntar: la lección ya quedó guardada, así que no hay conversación
+  // que "perder" en el sentido que le da la confirmación de salida.
+  s.completed = true;
+  closeStudySession({ force: true });
+
+  // Lo que hay detrás del modal ya no dice la verdad: el tema quedó verde, la
+  // barra subió y el presupuesto de horas del ramo bajó.
+  if(course === activeCourse){
+    renderDiagnostic();
+    renderPlanner();
+    renderPlanState();
+  }
+
+  showToast(`✅ <b>¡Lección marcada como pasada!</b> “${escapeHtml(name)}” quedó 🟢 dominado` +
+    `${after > before ? ` y la preparación de ${escapeHtml(course)} subió de ${before}% a ${after}%` : ''}.`);
+}
+
 /* --- Render ----------------------------------------------------------------- */
 
 function focusSessionInput(){
@@ -6764,6 +6871,9 @@ function renderStudySession(){
       ? 'Última fase de la clase'
       : `Saltar a la ${SESSION_PHASES[s.phase + 1].title.toLowerCase()} →`;
   }
+  // Solo mientras el profesor no esté escribiendo: marcar el tema en medio de un
+  // turno cerraría el modal con una respuesta en camino.
+  if(sessionPassBtn) sessionPassBtn.disabled = s.pending;
 }
 
 /* --- Eventos ---------------------------------------------------------------- */
@@ -6777,6 +6887,7 @@ if(sessionModalEl) sessionModalEl.addEventListener('click', ev => {
     case 'finish-session': closeStudySession(); break;
     case 'toggle-session-timer': toggleSessionTimer(); break;
     case 'next-session-phase': advanceSessionPhase(); break;
+    case 'pass-session': passStudySessionAsMastered(); break;
   }
 });
 

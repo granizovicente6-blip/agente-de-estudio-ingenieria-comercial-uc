@@ -2436,6 +2436,23 @@ body.modal-open{overflow:hidden;}
 .session-ghost:focus-visible{outline:2px solid var(--focus-gold); outline-offset:2px;}
 .session-ghost[disabled]{opacity:.4; cursor:default;}
 .session-ghost[disabled]:hover{border-color:var(--focus-line); color:var(--focus-soft);}
+/* "Dar lección por pasada": la única acción del pie que cambia el plan, así que
+   es la única con relleno. Verde, el mismo del cierre logrado, porque deja el
+   tema exactamente donde lo dejaría terminar el programa. */
+.session-pass{
+  font-family:'Inter',sans-serif;
+  font-size:12.5px; font-weight:600;
+  padding:8px 14px;
+  border:1px solid var(--focus-green);
+  background:rgba(132,196,143,0.14); color:var(--focus-green);
+  cursor:pointer;
+  flex:none;
+}
+.session-pass:hover{background:var(--focus-green); color:#101728;}
+.session-pass:focus-visible{outline:2px solid var(--focus-gold); outline-offset:2px;}
+.session-pass[disabled]{opacity:.4; cursor:default;}
+.session-pass[disabled]:hover{background:rgba(132,196,143,0.14); color:var(--focus-green);}
+
 .session-note{
   flex:1; min-width:160px;
   font-size:11.5px; line-height:1.45; color:var(--focus-soft); opacity:.85;
@@ -3692,6 +3709,58 @@ body.modal-open{overflow:hidden;}
   body.guide-open #study-guide-doc .guide-footer{
     page-break-before:avoid; break-before:avoid;
   }
+}
+
+/* =========================================================================
+   AVISOS BREVES (toasts)
+
+   Van sobre los modales (z-index:50) porque el aviso llega justo cuando uno se
+   cierra: si quedara debajo, el alumno no vería nunca la confirmación. El
+   contenedor no intercepta el puntero —es una franja invisible que cruza media
+   pantalla—; solo las tarjetas lo hacen, para poder cerrarlas con un clic.
+   ========================================================================= */
+.toast-stack{
+  position:fixed; z-index:80;
+  left:50%; bottom:24px; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  width:min(460px, calc(100vw - 32px));
+  pointer-events:none;
+}
+.toast{
+  pointer-events:auto;
+  width:100%;
+  background:var(--ink); color:#f6f4ee;
+  border:1px solid var(--ink);
+  border-left:5px solid var(--gold);
+  box-shadow:4px 5px 0 rgba(22,34,63,0.28);
+  padding:13px 16px;
+  font-size:13.5px; line-height:1.5;
+  cursor:pointer;
+  animation:toast-in .22s ease-out;
+}
+.toast b{color:#fff;}
+.toast.is-ok{border-left-color:var(--lvl-bajo-soft);}
+.toast.is-error{border-left-color:#e79680;}
+/* Salida: la pone app.js justo antes de sacar el nodo del árbol. */
+.toast.is-out{animation:toast-out .2s ease-in forwards;}
+
+@keyframes toast-in{
+  from{opacity:0; transform:translateY(10px);}
+  to{opacity:1; transform:translateY(0);}
+}
+@keyframes toast-out{
+  from{opacity:1; transform:translateY(0);}
+  to{opacity:0; transform:translateY(8px);}
+}
+/* Con el movimiento reducido el aviso aparece y desaparece sin desplazarse: lo
+   que importa es el texto, no la entrada. */
+@media (prefers-reduced-motion:reduce){
+  .toast, .toast.is-out{animation:none;}
+}
+
+@media (max-width:560px){
+  .toast-stack{bottom:14px; width:calc(100vw - 24px);}
+  .toast{font-size:13px; padding:12px 14px;}
 }
 
 /* Pie de la página. Por clase por la misma razón que .site-header: los pies de
