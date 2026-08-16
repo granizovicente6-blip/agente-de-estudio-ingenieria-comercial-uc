@@ -315,14 +315,24 @@
         <div class="flashcard" id="flashcard" role="button" tabindex="0">
           <div class="flashcard-inner">
             <div class="flashcard-face flashcard-front">
-              <p class="flashcard-tag">Concepto</p>
+              <div class="flashcard-badges">
+                <span class="flashcard-badge badge-concept">Concepto</span>
+                <span class="flashcard-badge badge-level" data-flashcard-level></span>
+              </div>
               <p class="flashcard-text" id="flashcard-front-text"></p>
-              <p class="flashcard-turn" aria-hidden="true">Girar ↻</p>
+              <p class="flashcard-turn" aria-hidden="true">
+                <span class="flashcard-turn-icon">↻</span> Girar para ver la definición
+              </p>
             </div>
             <div class="flashcard-face flashcard-back">
-              <p class="flashcard-tag">Definición</p>
+              <div class="flashcard-badges">
+                <span class="flashcard-badge badge-answer">Definición</span>
+                <span class="flashcard-badge badge-level" data-flashcard-level></span>
+              </div>
               <p class="flashcard-text" id="flashcard-back-text"></p>
-              <p class="flashcard-turn" aria-hidden="true">Volver ↺</p>
+              <p class="flashcard-turn" aria-hidden="true">
+                <span class="flashcard-turn-icon">↺</span> Volver al concepto
+              </p>
             </div>
           </div>
         </div>
@@ -330,6 +340,9 @@
     </div>
 
     <div class="test-foot flashcards-foot" id="flashcards-foot" hidden>
+      <div class="flashcards-progress" aria-hidden="true">
+        <span class="flashcards-progress-fill" id="flashcards-progress-fill"></span>
+      </div>
       <div class="flashcards-nav">
         <button type="button" class="ghost-btn" data-action="prev-flashcard">← Anterior</button>
         <span class="flashcards-counter" id="flashcards-counter" aria-live="polite"></span>

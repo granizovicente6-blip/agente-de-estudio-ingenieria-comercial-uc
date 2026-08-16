@@ -1496,32 +1496,96 @@ body.modal-open{overflow:hidden;}
 }
 .practice-foot-actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
 
-/* --- Modal de flashcards --- */
-.flashcards-dialog{max-width:600px; border-left:5px solid var(--line);}
-.flashcards-dialog.lvl-alto{border-left-color:var(--lvl-alto);}
-.flashcards-dialog.lvl-medio{border-left-color:var(--lvl-medio);}
-.flashcards-dialog.lvl-bajo{border-left-color:var(--lvl-bajo);}
-.flashcards-body{padding:20px;}
+/* --- Modal de flashcards ---
+   Este modal se sale a propósito de la paleta editorial del resto de la app
+   (papel crema, tinta azul marino, sombra dura). Un mazo de fichas se lee de
+   corrido y muy seguido, así que aquí manda la legibilidad: cara casi blanca,
+   texto en gris pizarra casi negro (17:1 de contraste contra el blanco, muy por
+   encima del 4.5:1 que pide la WCAG) y color vivo reservado a los badges, que
+   son etiquetas cortas y no cuerpo de lectura. */
+.flashcards-dialog{
+  --fc-ink:#0f172a;          /* título de la ficha: el texto que se estudia */
+  --fc-body:#1e293b;         /* definición: un punto más claro, misma familia */
+  --fc-muted:#475569;        /* apoyos (contador, pistas): 7.5:1 sobre blanco */
+  --fc-face:#ffffff;         /* frente: blanco puro, el concepto salta */
+  --fc-face-back:#fffdf7;    /* reverso: marfil, se distingue sin perder foco */
+  --fc-edge:#e2e8f0;
+  --fc-deck:#eef2f8;         /* cartas del mazo que asoman por detrás */
+  --fc-cobalt:#2563eb;
+  --fc-emerald:#059669;
+  --fc-purple:#7c3aed;
+  /* Acento del semáforo de dominio; lo pisa cada .lvl-* de abajo. */
+  --fc-accent:#64748b;
+  --fc-accent-ink:#334155;
+  --fc-accent-soft:#f1f5f9;
+
+  max-width:620px;
+  background:#f8fafc;
+  border:1px solid #dbe2ee;
+  border-radius:20px;
+  box-shadow:0 24px 60px -20px rgba(15,23,42,.45), 0 4px 12px rgba(15,23,42,.10);
+}
+/* El semáforo (alta prioridad / repaso / dominado) vive en el badge de la ficha
+   y en la barra de progreso, no en el color del texto. */
+.flashcards-dialog.lvl-alto{ --fc-accent:#7c3aed; --fc-accent-ink:#5b21b6; --fc-accent-soft:#f5f1ff; }
+.flashcards-dialog.lvl-medio{ --fc-accent:#2563eb; --fc-accent-ink:#1d4ed8; --fc-accent-soft:#eff4ff; }
+.flashcards-dialog.lvl-bajo{ --fc-accent:#059669; --fc-accent-ink:#046c4e; --fc-accent-soft:#e9f9f1; }
+
+.flashcards-dialog .test-head{
+  background:#fff;
+  border-bottom:1px solid var(--fc-edge);
+  padding:18px 22px 14px;
+}
+.flashcards-dialog .test-eyebrow{color:var(--fc-accent-ink);}
+.flashcards-dialog .practice-topic-title{color:var(--fc-ink);}
+.flashcards-dialog .test-counter{color:var(--fc-muted);}
+.flashcards-dialog .test-close{color:var(--fc-muted);}
+.flashcards-body{padding:24px 22px 20px; background:#f8fafc;}
 
 /* La perspectiva vive en el contenedor: si se pone en la tarjeta que gira, el
    punto de fuga rota con ella y el volumen se pierde. */
 .flashcard-container{
-  perspective:1400px;
-  min-height:270px;
+  perspective:1600px;
+  min-height:290px;
+  padding-bottom:16px;      /* deja asomar las cartas del mazo de más abajo */
 }
 .flashcard{
   position:relative;
   width:100%;
-  min-height:270px;
+  min-height:290px;
   cursor:pointer;
   -webkit-tap-highlight-color:transparent;
 }
-.flashcard:focus-visible{outline:2px solid var(--blue); outline-offset:4px;}
+.flashcard:focus-visible{outline:none;}
+.flashcard:focus-visible .flashcard-face{
+  outline:3px solid var(--fc-cobalt);
+  outline-offset:3px;
+}
+
+/* Mazo: dos cartas más abajo asomando detrás de la de arriba. Van en los
+   pseudoelementos de .flashcard (que no gira) y no de .flashcard-inner (que sí),
+   para que se queden quietas mientras la de arriba da la vuelta. Pintan antes
+   que .flashcard-inner porque este crea contexto de apilado con preserve-3d. */
+.flashcard::before,
+.flashcard::after{
+  content:'';
+  position:absolute; inset:0;
+  border-radius:18px;
+  background:var(--fc-deck);
+  border:1px solid var(--fc-edge);
+  transition:transform .35s ease;
+}
+.flashcard::before{transform:translateY(7px) scale(.982);}
+.flashcard::after{transform:translateY(13px) scale(.962);}
+/* Al pasar el mouse el mazo se "abre" un poco: da a entender que hay más fichas. */
+.flashcard:hover::before{transform:translateY(10px) scale(.982);}
+.flashcard:hover::after{transform:translateY(18px) scale(.962);}
+
 .flashcard-inner{
   position:relative;
   width:100%;
-  min-height:270px;
-  transition:transform 0.6s;
+  min-height:290px;
+  transition:transform .62s cubic-bezier(.22,.68,.36,1);
   transform-style:preserve-3d;
 }
 .flashcard.is-flipped .flashcard-inner{transform:rotateY(180deg);}
@@ -1529,73 +1593,188 @@ body.modal-open{overflow:hidden;}
    reverso anterior dando la vuelta con el texto de la tarjeta nueva. */
 .flashcard.no-anim .flashcard-inner{transition:none;}
 
-.flashcard-front, .flashcard-back{
+.flashcard-face{
   position:absolute; inset:0;
   backface-visibility:hidden;
   -webkit-backface-visibility:hidden;   /* Safari todavía lo necesita */
   display:flex; flex-direction:column;
-  padding:20px 22px;
-  border:1px solid var(--ink);
-  box-shadow:var(--shadow);
+  padding:22px 24px 18px;
+  border:1px solid var(--fc-edge);
+  border-top:5px solid var(--fc-cobalt);
+  border-radius:18px;
   overflow-y:auto;
+  /* Tres capas: el filo, el volumen cercano y la sombra larga de la mesa. */
+  box-shadow:
+    0 1px 2px rgba(15,23,42,.05),
+    0 10px 22px -8px rgba(15,23,42,.20),
+    0 28px 48px -28px rgba(15,23,42,.35);
+  transition:box-shadow .25s ease;
 }
-.flashcard-back{transform:rotateY(180deg);}
-
-.flashcard-front{
-  background:var(--paper-card);
-  border-left:4px solid var(--gold);
+.flashcard:hover .flashcard-face{
+  box-shadow:
+    0 1px 2px rgba(15,23,42,.05),
+    0 16px 30px -10px rgba(15,23,42,.24),
+    0 36px 60px -30px rgba(15,23,42,.40);
 }
-/* El reverso se distingue de un vistazo: fondo azulado y acento distinto. */
+.flashcard-front{background:var(--fc-face);}
+/* El reverso se distingue de un vistazo: marfil, filo verde y su propio badge. */
 .flashcard-back{
-  background:var(--blue-soft);
-  border-left:4px solid var(--blue);
+  transform:rotateY(180deg);
+  background:var(--fc-face-back);
+  border-top-color:var(--fc-emerald);
 }
-.flashcard-tag{
-  font-family:'JetBrains Mono',monospace;
-  font-size:11px; letter-spacing:.1em; text-transform:uppercase;
-  color:var(--gold); margin:0 0 12px;
+
+.flashcard-badges{
+  display:flex; align-items:center; flex-wrap:wrap; gap:8px;
+  margin-bottom:16px;
   flex:none;
 }
-.flashcard-back .flashcard-tag{color:var(--blue);}
+.flashcard-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:10.5px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase;
+  padding:5px 11px;
+  border-radius:999px;
+  border:1px solid transparent;
+  white-space:nowrap;
+}
+.flashcard-badge::before{
+  content:''; flex:none;
+  width:6px; height:6px; border-radius:50%;
+  background:currentColor;
+}
+/* Dos jerarquías de badge, para que no se confundan de un vistazo: la pastilla
+   con tinte suave dice qué cara estoy viendo, la sólida dice qué tan relevante
+   es el tema. Sin esa distinción, en lvl-bajo "Definición" y "Relevancia baja"
+   quedaban del mismo verde, pegadas y con el mismo peso. */
+.badge-concept{background:#eff4ff; color:#1d4ed8; border-color:#c7d8fe;}
+.badge-answer{background:#e9f9f1; color:#046c4e; border-color:#b3e8cf;}
+.badge-level{
+  background:var(--fc-accent-ink);   /* tono oscuro del acento: blanco encima pasa AA de sobra */
+  color:#fff;
+  border-color:var(--fc-accent-ink);
+}
+.badge-level:empty{display:none;}
+
 .flashcard-text{
   font-family:'Source Serif 4',serif;
-  font-weight:600; font-size:20px; line-height:1.4;
-  color:var(--ink); margin:0;
+  font-weight:600; font-size:23px; line-height:1.34;
+  color:var(--fc-ink); margin:0;
   flex:1;
   display:flex; align-items:center;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
+  letter-spacing:-.005em;
 }
-/* La definición es más larga que el concepto: texto más chico y alineado arriba. */
+/* La definición es más larga que el concepto: texto más chico, alineado arriba
+   y con más interlínea, que es un párrafo y no un titular. */
 .flashcard-back .flashcard-text{
   font-family:'Inter',sans-serif;
-  font-weight:400; font-size:15.5px; line-height:1.6;
+  font-weight:400; font-size:16px; line-height:1.68;
+  color:var(--fc-body);
   align-items:flex-start;
 }
 .flashcard-turn{
+  display:flex; align-items:center; justify-content:flex-end; gap:7px;
   font-family:'JetBrains Mono',monospace;
-  font-size:11px; color:var(--ink-soft);
-  margin:12px 0 0; text-align:right;
+  font-size:11px; color:var(--fc-muted);
+  margin:16px 0 0;
+  padding-top:12px;
+  border-top:1px dashed var(--fc-edge);
   flex:none;
 }
+.flashcard-turn-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; border-radius:50%;
+  background:var(--fc-accent-soft); color:var(--fc-accent-ink);
+  font-size:12px; line-height:1;
+  transition:transform .3s ease;
+}
+.flashcard:hover .flashcard-turn-icon{transform:rotate(180deg);}
 
-.flashcards-foot{flex-direction:column; align-items:stretch; gap:10px;}
-.flashcards-nav{display:flex; align-items:center; justify-content:space-between; gap:10px;}
-.flashcards-nav .ghost-btn[disabled]{opacity:.45; cursor:default;}
+/* --- Pie del mazo: progreso + navegación --- */
+.flashcards-foot{
+  flex-direction:column; align-items:stretch; gap:12px;
+  background:#fff;
+  border-top:1px solid var(--fc-edge);
+  padding:14px 22px 16px;
+}
+.flashcards-progress{
+  height:4px; border-radius:999px;
+  background:#e8edf5;
+  overflow:hidden;
+}
+.flashcards-progress-fill{
+  display:block; height:100%;
+  width:var(--fc-progress, 0%);
+  border-radius:999px;
+  /* De la tinta al acento: así el degradado se nota en los tres niveles (si el
+     segundo tono se mezclara con el morado, en lvl-alto quedaría plano). */
+  background:linear-gradient(90deg, var(--fc-accent-ink), var(--fc-accent));
+  transition:width .3s ease;
+}
+/* 1fr auto 1fr deja el contador exactamente al centro aunque los dos botones
+   midan distinto ("← Anterior" es más corto que "Siguiente →"). */
+.flashcards-nav{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  gap:12px;
+}
+.flashcards-nav .ghost-btn{
+  font-family:'Inter',sans-serif;
+  font-size:13.5px; font-weight:600;
+  padding:10px 18px;
+  border-radius:999px;
+  border:1px solid #d7dfec;
+  background:#fff;
+  color:var(--fc-body);
+  box-shadow:0 1px 2px rgba(15,23,42,.06);
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease, color .15s ease;
+}
+.flashcards-nav .ghost-btn:first-child{justify-self:start;}
+.flashcards-nav .ghost-btn:last-child{justify-self:end;}
+.flashcards-nav .ghost-btn:hover:not([disabled]){
+  border-color:var(--fc-cobalt);
+  color:#1d4ed8;
+  transform:translateY(-1px);
+  box-shadow:0 6px 14px -6px rgba(37,99,235,.5);
+}
+.flashcards-nav .ghost-btn:active:not([disabled]){transform:translateY(0);}
+.flashcards-nav .ghost-btn:focus-visible{outline:2px solid var(--fc-cobalt); outline-offset:2px;}
+.flashcards-nav .ghost-btn[disabled]{opacity:.4; cursor:default; box-shadow:none;}
 .flashcards-counter{
   font-family:'JetBrains Mono',monospace;
-  font-size:11.5px; color:var(--ink-soft);
-  flex:1; text-align:center;
+  font-size:11.5px; font-weight:600; letter-spacing:.04em;
+  color:var(--fc-muted);
+  text-align:center;
 }
-.flashcards-hint{font-size:12px; color:var(--ink-soft); line-height:1.5; margin:0; text-align:center;}
+.flashcards-hint{
+  font-size:12px; color:var(--fc-muted); line-height:1.6;
+  margin:0; text-align:center;
+}
 .flashcards-hint kbd{
   font-family:'JetBrains Mono',monospace;
-  font-size:11px;
-  border:1px solid var(--line); background:var(--paper-card);
-  padding:1px 5px;
+  font-size:11px; color:var(--fc-body);
+  border:1px solid #d7dfec; border-bottom-width:2px; border-radius:5px;
+  background:#f8fafc;
+  padding:1px 6px;
 }
 
-@media (prefers-reduced-motion:reduce){ .flashcard-inner{transition:none;} }
+/* Los estados de carga y error del modal también siguen la paleta clara. */
+.flashcards-body .practice-loading-text,
+.flashcards-body .test-hint{color:var(--fc-muted);}
+
+@media (prefers-reduced-motion:reduce){
+  .flashcard-inner,
+  .flashcard::before, .flashcard::after,
+  .flashcard-turn-icon, .flashcards-progress-fill,
+  .flashcards-nav .ghost-btn{transition:none;}
+  .flashcard:hover::before{transform:translateY(7px) scale(.982);}
+  .flashcard:hover::after{transform:translateY(13px) scale(.962);}
+  .flashcard:hover .flashcard-turn-icon{transform:none;}
+}
 
 /* --- Modal Feynman ("peras y manzanas") ---
    El más cálido de los modales: es el que se abre cuando el alumno no entiende
@@ -1692,17 +1871,31 @@ body.modal-open{overflow:hidden;}
   .practice-foot-actions .ghost-btn,
   .practice-foot-actions .primary-btn{flex:1; text-align:center;}
 
-  /* Flashcards en el celular: tarjeta más alta (se lee y se toca cómoda) y
-     botones de navegación grandes, uno a cada lado del contador. */
-  .flashcards-dialog{border-left:none;}
+  /* Flashcards en el celular: el modal ocupa la pantalla completa (sin bordes
+     redondeados que ya no delimitan nada), la tarjeta crece para que el texto
+     respire y se toque cómoda, y los botones se estiran a área de pulgar. */
+  .flashcards-dialog{border-radius:0; border:none; box-shadow:none;}
   .btn-flashcards{width:100%; text-align:center;}
-  .flashcards-body{padding:16px;}
-  .flashcard-container, .flashcard, .flashcard-inner{min-height:320px;}
-  .flashcard-front, .flashcard-back{padding:18px;}
-  .flashcard-text{font-size:18px;}
-  .flashcard-back .flashcard-text{font-size:15px;}
-  .flashcards-nav .ghost-btn{flex:0 0 auto; padding:12px 14px;}
-  .flashcards-counter{font-size:11px;}
+  .flashcards-dialog .test-head{padding:16px 16px 12px;}
+  .flashcards-body{padding:18px 16px 16px; display:flex; flex-direction:column;}
+  /* A pantalla completa el mazo se estira hasta el pie: si se quedara en su alto
+     mínimo, en un teléfono largo quedaba un vacío enorme bajo la tarjeta. */
+  .flashcard-container{flex:1 1 auto; display:flex; flex-direction:column;}
+  .flashcard{flex:1 1 auto;}
+  .flashcard-inner{flex:1 1 auto;}
+  .flashcard-container, .flashcard, .flashcard-inner{min-height:340px;}
+  .flashcard-face{padding:18px 18px 15px; border-radius:16px;}
+  .flashcard::before, .flashcard::after{border-radius:16px;}
+  .flashcard-text{font-size:20px;}
+  .flashcard-back .flashcard-text{font-size:15.5px; line-height:1.65;}
+  .flashcards-foot{padding:12px 16px 16px;}
+  /* El contador pasa a su propia fila: en pantallas angostas, tres columnas
+     dejaban los botones demasiado angostos para el pulgar. */
+  .flashcards-nav{grid-template-columns:1fr 1fr; gap:10px;}
+  .flashcards-counter{grid-row:1; grid-column:1 / -1; font-size:11px;}
+  .flashcards-nav .ghost-btn{padding:13px 14px; width:100%; text-align:center;}
+  .flashcards-nav .ghost-btn:first-child,
+  .flashcards-nav .ghost-btn:last-child{justify-self:stretch;}
 
   /* Peras y manzanas en el celular: la analogía es texto largo, así que se le
      deja el ancho completo y se mantiene el cuerpo grande (es lo que se lee). */

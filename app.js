@@ -437,6 +437,9 @@ const flashcardContainerEl = document.getElementById('flashcard-container');
 const flashcardEl = document.getElementById('flashcard');
 const flashcardFrontEl = document.getElementById('flashcard-front-text');
 const flashcardBackEl = document.getElementById('flashcard-back-text');
+// Un badge por cara: las dos muestran la misma relevancia del tema.
+const flashcardLevelEls = document.querySelectorAll('[data-flashcard-level]');
+const flashcardsProgressEl = document.getElementById('flashcards-progress-fill');
 const feynmanOverlayEl = document.getElementById('feynman-overlay');
 const feynmanModalEl = document.getElementById('feynman-modal');
 const feynmanTitleEl = document.getElementById('feynman-title');
@@ -3670,6 +3673,9 @@ function renderFlashcards(){
 
   flashcardsSubtitleEl.textContent =
     `${s.cards.length} concepto${s.cards.length === 1 ? '' : 's'} clave · relevancia ${s.relevance.toLowerCase()}`;
+  // El color del badge lo pone el CSS a partir del .lvl-* del modal; aquí solo
+  // va el texto, que es el mismo en las dos caras.
+  flashcardLevelEls.forEach(el => { el.textContent = `Relevancia ${s.relevance.toLowerCase()}`; });
   showFlashcard(s.index);
   flashcardEl.focus();
 }
@@ -3696,6 +3702,9 @@ function showFlashcard(index){
   flashcardFrontEl.textContent = card.front;
   flashcardBackEl.textContent = card.back;
   flashcardsCounterEl.textContent = `Tarjeta ${s.index + 1} de ${total}`;
+  if(flashcardsProgressEl){
+    flashcardsProgressEl.style.setProperty('--fc-progress', `${((s.index + 1) / total) * 100}%`);
+  }
   updateFlashcardState();
 
   const prev = flashcardsFootEl.querySelector('[data-action="prev-flashcard"]');
