@@ -6116,6 +6116,14 @@ if(chatFormEl) chatFormEl.addEventListener('submit', ev => {
    fases fijas —teoría, ejercicio guiado y pregunta de cierre— con un reloj
    corriendo, como un bloque de estudio de verdad.
 
+   La fase en curso vive acá, en `studySessionState.phase`, y es lo que le dice
+   al Worker qué pedirle al profesor en cada turno. Quién la mueve: el alumno con
+   el botón del pie, o el propio profesor cuando da la fase por terminada. Lo
+   segundo necesita una señal explícita —el Worker separa su línea de control y
+   la devuelve como `nextPhase`—, porque el profesor anunciando el cambio en su
+   texto no mueve nada: la clase se quedaría en la fase 1 dando vueltas y no
+   llegaría nunca a la fase 3, que es donde se emite el veredicto y termina.
+
    La clase NO se guarda: vive en el estado del modal y se pierde al cerrarlo. Es
    a propósito y es distinto del chat (que sí sobrevive dentro de la sesión del
    navegador): una clase es una sentada completa, retomarla a medias tres días
@@ -6342,7 +6350,15 @@ async function requestStudySession(state, userResponse, history, signal){
   const reply = String((data && data.reply) || '').trim().slice(0, MAX_SESSION_REPLY_CHARS);
   if(!reply) throw new Error('El profesor no respondió. Reintenta.');
   const verdict = (data && (data.verdict === 'logrado' || data.verdict === 'repasar')) ? data.verdict : null;
-  return { reply, verdict };
+
+  // Señal de cambio de fase: el Worker la separa del texto del profesor y la
+  // manda como número de fase (2 o 3). Es lo único que mueve `state.phase` sin
+  // que el alumno apriete el botón, así que se valida contra las fases que
+  // existen antes de creerle.
+  const raw = Number(data && data.nextPhase);
+  const nextPhase = Number.isInteger(raw) && raw >= 2 && raw <= SESSION_PHASES.length ? raw : null;
+
+  return { reply, verdict, nextPhase };
 }
 
 /* --- El hilo de la clase ---------------------------------------------------
@@ -6457,17 +6473,28 @@ async function runSessionTurn(userResponse){
   const text = String(userResponse || '').trim().slice(0, MAX_SESSION_MESSAGE_CHARS);
   // El historial es lo conversado ANTES de este turno.
   const history = sessionHistory(s);
-  if(text) s.thread.push({ kind: 'msg', role: 'user', content: text });
+  // La fase queda anotada en el turno del alumno igual que en el del profesor:
+  // con eso se sabe si la fase en curso alcanzó a tener conversación.
+  if(text) s.thread.push({ kind: 'msg', role: 'user', content: text, phase: s.phase });
 
   s.pending = true;
   s.controller = new AbortController();
   renderStudySession();
 
+  // El cambio de fase no se puede hacer acá dentro: `s.pending` todavía está en
+  // true y el turno con que se abre la fase siguiente se descartaría solo. Se
+  // anota y se dispara al final, con el turno ya cerrado.
+  let advanceTo = null;
+
   try{
-    const { reply, verdict } = await requestStudySession(s, text, history, s.controller.signal);
+    const { reply, verdict, nextPhase } = await requestStudySession(s, text, history, s.controller.signal);
     if(studySessionState !== s) return;                  // se cerró o se cambió de clase
     s.thread.push({ kind: 'msg', role: 'assistant', content: reply, phase: s.phase });
     if(verdict) applySessionVerdict(s, verdict);
+    // Una fase se cierra recién cuando el alumno participó en ella: si el
+    // profesor pide avanzar en el mismo turno con que se abre la fase, es un
+    // error suyo y saltaría la clase entera sin que el alumno haga nada.
+    else if(nextPhase && sessionUserTurns(s, s.phase) > 0) advanceTo = nextPhase - 1;
   }catch(err){
     if(studySessionState !== s || (s.controller && s.controller.signal.aborted)) return;
     pushSessionNote(s, err.message || 'No se pudo continuar la clase. Reintenta.', 'error');
@@ -6479,14 +6506,34 @@ async function runSessionTurn(userResponse){
       focusSessionInput();
     }
   }
+
+  if(advanceTo !== null && studySessionState === s) advanceSessionPhase({ to: advanceTo });
 }
 
-// Cambio de fase: lo puede pedir el alumno con el botón del pie, y es también
-// como avanza la clase cuando una fase ya dio lo que tenía que dar.
-function advanceSessionPhase(){
+// Cuántas veces respondió el alumno dentro de una fase. Los turnos de apertura
+// no cuentan: los pide la aplicación, no el alumno, y no dejan mensaje suyo.
+function sessionUserTurns(s, phase){
+  return s.thread.filter(m => m.kind === 'msg' && m.role === 'user' && m.phase === phase).length;
+}
+
+// Cambio de fase. Hay dos formas de llegar acá y las dos terminan igual: el
+// alumno que aprieta el botón del pie, y el profesor que cerró la fase y lo
+// avisó con su línea de control (`nextPhase`, ver requestStudySession). La fase
+// nueva la abre siempre un turno del profesor, como la primera.
+//
+// `to` es el índice de la fase de destino. Nunca se salta más de una fase por
+// vez, aunque la pidan: cada fase necesita su propio turno de apertura para que
+// el profesor sepa desde dónde parte.
+function advanceSessionPhase({ to } = {}){
   const s = studySessionState;
-  if(!s || s.pending || s.phase >= SESSION_PHASES.length - 1) return;
-  s.phase += 1;
+  if(!s || s.pending || s.completed) return;
+
+  const last = SESSION_PHASES.length - 1;
+  const wanted = Number.isInteger(to) ? to : s.phase + 1;
+  const target = Math.min(wanted, s.phase + 1, last);
+  if(target <= s.phase) return;
+
+  s.phase = target;
   s.thread.push({ kind: 'divider', phase: s.phase });
   renderStudySession();
   runSessionTurn('');
