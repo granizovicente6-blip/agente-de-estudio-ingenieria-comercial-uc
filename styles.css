@@ -34,7 +34,12 @@ body{
 }
 a{color:var(--blue);}
 
-header{
+/* Cabecera de la página. Va por clase y no por etiqueta a propósito: los
+   documentos imprimibles (la ficha de estudio y la guía de ejercicios) arman su
+   propio <header> dentro del modal, y con un selector de etiqueta heredaban de
+   aquí el fondo azul marino —dejando el nombre del ramo en tinta oscura sobre
+   fondo oscuro, ilegible—. Lo mismo vale para .site-footer más abajo. */
+.site-header{
   background:var(--ink);
   color:#f6f4ee;
   padding:38px 24px 34px;
@@ -56,7 +61,7 @@ h1{
   margin:0 0 12px;
   line-height:1.15;
 }
-header p{
+.site-header p{
   font-size:16px;
   color:#c9d0e0;
   max-width:560px;
@@ -2920,8 +2925,17 @@ body.modal-open{overflow:hidden;}
   box-shadow:2px 3px 0 rgba(22,34,63,.14);
 }
 
-/* --- Encabezado del documento --- */
-.sheet-header{border-bottom:2px solid var(--sheet-ink); padding-bottom:16px; margin-bottom:20px;}
+/* --- Encabezado del documento ---
+   El fondo y la tinta van explícitos aunque los herede de la hoja: esto es un
+   <header>, y así ninguna regla de la página puede volver a pintarlo oscuro
+   dejando el nombre del ramo en tinta oscura sobre fondo oscuro. */
+.sheet-header{
+  background:transparent;
+  color:var(--sheet-ink);
+  border-bottom:2px solid var(--sheet-ink);
+  padding-bottom:16px;
+  margin-bottom:20px;
+}
 .sheet-eyebrow{
   font-family:'JetBrains Mono',monospace;
   font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
@@ -3189,8 +3203,16 @@ body.modal-open{overflow:hidden;}
   box-shadow:2px 3px 0 rgba(22,34,63,.14);
 }
 
-/* --- Encabezado institucional --- */
-.guide-header{border-bottom:2px solid var(--guide-ink); padding-bottom:16px; margin-bottom:22px;}
+/* --- Encabezado institucional ---
+   Fondo y tinta explícitos por lo mismo que en .sheet-header: es un <header>
+   dentro de un documento claro, y no debe heredar la piel oscura de la página. */
+.guide-header{
+  background:transparent;
+  color:var(--guide-ink);
+  border-bottom:2px solid var(--guide-ink);
+  padding-bottom:16px;
+  margin-bottom:22px;
+}
 .guide-inst{
   font-family:'Source Serif 4',serif;
   font-size:12.5px; font-weight:600;
@@ -3664,7 +3686,10 @@ body.modal-open{overflow:hidden;}
   }
 }
 
-footer{
+/* Pie de la página. Por clase por la misma razón que .site-header: los pies de
+   los documentos imprimibles (.sheet-footer, .guide-footer) son <footer> y
+   heredaban de aquí el ancho máximo y los 50px de relleno inferior. */
+.site-footer{
   max-width:980px; margin:0 auto; padding:0 20px 50px;
   font-size:13px; color:var(--ink-soft);
 }
