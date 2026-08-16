@@ -17,6 +17,12 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
+/* `hidden` significa oculto, siempre. El `display:none` que trae el navegador
+   para `[hidden]` pierde contra cualquier regla de autor con `display:`, así que
+   sin esta línea los bloques que son flex o grid (el cargando de los modales,
+   sus pies, la ficha de la analogía) se quedan pegados en pantalla aunque
+   app.js los marque como ocultos. */
+[hidden]{display:none !important;}
 body{
   background:var(--paper);
   background-image:
