@@ -477,7 +477,8 @@ const sessionFormEl = document.getElementById('study-session-form');
 const sessionInputEl = document.getElementById('study-session-input');
 const sessionSendBtn = document.getElementById('study-session-send');
 const sessionSkipBtn = document.getElementById('study-session-skip');
-const sessionPassBtn = document.getElementById('study-session-pass');
+const sessionPassLessonBtn = document.getElementById('study-session-pass-lesson');
+const sessionPassTopicBtn = document.getElementById('study-session-pass-topic');
 const examLaunchEl = document.getElementById('exam-launch');
 const examLaunchNoteEl = document.getElementById('exam-launch-note');
 const startExamBtn = document.getElementById('btn-start-exam');
@@ -6669,27 +6670,73 @@ function applySessionVerdict(s, verdict){
   }
 }
 
-/* --- Dar la lección por pasada ----------------------------------------------
-   El atajo del que ya sabe el tema. Deja el tema exactamente donde lo dejaría
-   terminar el programa completo (🟢 dominado, pasos marcados, practicado), sin
-   pasar por las tres fases. No es una trampa al plan: el semáforo es del alumno
-   —la tarjeta del tema tiene el selector de nivel para volver atrás— y el
-   presupuesto de horas del ramo se recalcula solo con el nivel nuevo.
+/* --- Dar por pasada la clase: una sesión, o el tema entero -------------------
+   Dos atajos para el que ya sabe la materia, y la diferencia entre los dos es
+   toda la unidad que aprueban:
 
-   Se separa del modal a propósito: lo único que necesita es el ramo y el tema,
-   así que sirve igual si algún día se agrega el mismo botón a la tarjeta. */
+     · aprobar esta lección  → suma 1 al programa (sesión 2 de 4). El tema queda
+                               🟡 en proceso mientras le falten sesiones.
+     · dar el tema por pasado → cierra el programa completo de una (🟢 dominado).
+
+   El semáforo sigue siendo del alumno en los dos casos: la tarjeta del tema
+   tiene el selector de nivel para volver atrás.
+
+   Se separan del modal a propósito: lo único que necesitan es el ramo y el
+   tema, así que sirven igual si algún día se agregan a la tarjeta. */
+
+// Los minutos con que una sesión "salta" el presupuesto. El bloque entero, no
+// el reloj de la clase: `spentMin` es lo que hace que las horas restantes del
+// tema equivalgan a las sesiones pendientes por el largo del bloque (ver
+// computeEffortPlan). Si una sesión sumara al contador sin sumar sus minutos,
+// la tarjeta diría "2 de 4 sesiones" y "8 h por estudiar" a la vez.
+function sessionSpentFor(program, sessions){
+  return Math.max(0, sessions) * (program.minutes || SESSION_BLOCK_MIN_MINUTES);
+}
+
+// Aprueba la sesión en curso: +1 al programa. Devuelve el estado nuevo, o null
+// si no quedaba ninguna sesión por sumar (programa ya completo).
+function markLessonPassed(course, topicId){
+  const d = getDiagnostic(course);
+  if(!d) return null;
+
+  // Se pide ANTES de tocar el nivel: el programa se dimensiona con el esfuerzo
+  // del tema, y ese cálculo depende del nivel actual.
+  const program = ensureSessionProgram(course, topicId);
+  if(!program || program.done >= program.total) return null;
+
+  program.done += 1;
+  program.spentMin = (program.spentMin || 0) + sessionSpentFor(program, 1);
+  program.updatedAt = Date.now();
+
+  const last = program.done >= program.total;
+  if(last){
+    // La última sesión cierra el tema, igual que el veredicto logrado del
+    // profesor en la última clase del programa.
+    markTopicMastered(course, topicId);
+  } else if(d.levels[topicId] === 'alto'){
+    // Quedan sesiones: el tema avanza a 🟡 en proceso, pero no se cierra. Es
+    // exactamente lo que hace una sesión intermedia cumplida en clase.
+    d.levels[topicId] = 'medio';
+    savePastEvals();
+  } else {
+    savePastEvals();
+  }
+  return { done: program.done, total: program.total, last };
+}
+
+// Cierra el programa completo del tema de una sola vez.
 function markTopicMastered(course, topicId){
   const ai = getAiAnalysis(course);
   const topic = ai && ai.topics.find(t => t.id === topicId);
   const d = getDiagnostic(course);
   if(!topic || !d) return false;
 
-  // El programa del tema se cierra entero: dar la lección por pasada es decir
-  // que las sesiones que quedaban ya no hacen falta. Se pide ANTES de tocar el
-  // nivel porque el programa se dimensiona con el esfuerzo del tema, y ese
-  // cálculo depende del nivel actual.
   const program = ensureSessionProgram(course, topicId);
   if(program){
+    // Las sesiones que quedaban ya no hacen falta: se dan por cubiertas, y con
+    // ellas sus minutos, para que al tema no le queden horas por estudiar.
+    program.spentMin = Math.max(program.spentMin || 0,
+                                sessionSpentFor(program, program.total));
     program.done = program.total;
     program.updatedAt = Date.now();
   }
@@ -6706,14 +6753,21 @@ function markTopicMastered(course, topicId){
   return true;
 }
 
-// El botón del pie de la clase guiada.
-function passStudySessionAsMastered(){
+/* Los dos botones del pie de la clase guiada. Comparten todo menos qué marcan y
+   qué dicen después, así que el cierre del modal y el repintado van juntos. */
+function passStudySession(scope){
   const s = studySessionState;
   if(!s || s.pending) return;
 
   const before = readinessPct(s.course);
-  if(!markTopicMastered(s.course, s.topicId)){
-    showToast('No se pudo marcar la lección: este tema ya no está en el plan del ramo.', 'error');
+  const result = scope === 'topic'
+    ? (markTopicMastered(s.course, s.topicId) ? { last: true } : null)
+    : markLessonPassed(s.course, s.topicId);
+
+  if(!result){
+    showToast(scope === 'topic'
+      ? 'No se pudo marcar el tema: ya no está en el plan del ramo.'
+      : 'El programa de este tema ya está completo: no queda sesión que sumar.', 'error');
     return;
   }
   const after = readinessPct(s.course);
@@ -6721,21 +6775,33 @@ function passStudySessionAsMastered(){
   // Se leen antes de cerrar: `closeStudySession` borra el estado de la clase.
   const { course, name } = s;
 
-  // Sin preguntar: la lección ya quedó guardada, así que no hay conversación
+  // Sin preguntar: lo aprobado ya quedó guardado, así que no hay conversación
   // que "perder" en el sentido que le da la confirmación de salida.
   s.completed = true;
   closeStudySession({ force: true });
 
-  // Lo que hay detrás del modal ya no dice la verdad: el tema quedó verde, la
-  // barra subió y el presupuesto de horas del ramo bajó.
+  // Lo que hay detrás del modal ya no dice la verdad: cambiaron las píldoras del
+  // programa, y con la última sesión también el color del tema y la barra.
   if(course === activeCourse){
     renderDiagnostic();
     renderPlanner();
     renderPlanState();
   }
 
-  showToast(`✅ <b>¡Lección marcada como pasada!</b> “${escapeHtml(name)}” quedó 🟢 dominado` +
-    `${after > before ? ` y la preparación de ${escapeHtml(course)} subió de ${before}% a ${after}%` : ''}.`);
+  const lift = after > before
+    ? ` La preparación de ${escapeHtml(course)} subió de ${before}% a ${after}%.` : '';
+  const title = escapeHtml(name);
+
+  if(scope === 'topic'){
+    showToast(`✅ <b>¡Tema dado por pasado!</b> “${title}” quedó 🟢 dominado con su programa completo.${lift}`);
+  } else if(result.last){
+    showToast(`✅ <b>¡Programa terminado!</b> Era la última sesión de “${title}”, así que el tema quedó ` +
+      `🟢 dominado (${result.done} de ${result.total}).${lift}`);
+  } else {
+    showToast(`✅ <b>¡Sesión completada!</b> Avanzaste en el programa de “${title}”: ` +
+      `<b>${result.done} de ${result.total}</b> ${plural(result.total, 'sesión', 'sesiones')}. ` +
+      `El tema sigue abierto hasta la última.${lift}`);
+  }
 }
 
 /* --- Render ----------------------------------------------------------------- */
@@ -6871,9 +6937,23 @@ function renderStudySession(){
       ? 'Última fase de la clase'
       : `Saltar a la ${SESSION_PHASES[s.phase + 1].title.toLowerCase()} →`;
   }
-  // Solo mientras el profesor no esté escribiendo: marcar el tema en medio de un
-  // turno cerraría el modal con una respuesta en camino.
-  if(sessionPassBtn) sessionPassBtn.disabled = s.pending;
+  // Los dos atajos, solo mientras el profesor no esté escribiendo: marcar en
+  // medio de un turno cerraría el modal con una respuesta en camino.
+  //
+  // El de la sesión dice cuál está aprobando, que es lo que lo distingue del
+  // otro. En un repaso extra no tiene nada que sumar (el programa ya está
+  // completo), así que ahí queda apagado y solo sobrevive el del tema.
+  if(sessionPassLessonBtn){
+    sessionPassLessonBtn.disabled = s.pending || s.isExtra;
+    sessionPassLessonBtn.textContent = s.isExtra
+      ? '✅ Programa del tema ya completo'
+      : `✅ Aprobar esta lección (sesión ${s.sessionIndex} de ${s.totalSessions})`;
+  }
+  if(sessionPassTopicBtn){
+    sessionPassTopicBtn.disabled = s.pending;
+    // Con una sola sesión los dos botones harían lo mismo; el del tema sobra.
+    sessionPassTopicBtn.hidden = s.totalSessions <= 1 && !s.isExtra;
+  }
 }
 
 /* --- Eventos ---------------------------------------------------------------- */
@@ -6887,7 +6967,8 @@ if(sessionModalEl) sessionModalEl.addEventListener('click', ev => {
     case 'finish-session': closeStudySession(); break;
     case 'toggle-session-timer': toggleSessionTimer(); break;
     case 'next-session-phase': advanceSessionPhase(); break;
-    case 'pass-session': passStudySessionAsMastered(); break;
+    case 'pass-lesson': passStudySession('lesson'); break;
+    case 'pass-topic':  passStudySession('topic');  break;
   }
 });
 

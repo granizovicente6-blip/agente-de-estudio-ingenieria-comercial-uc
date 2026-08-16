@@ -524,14 +524,19 @@
       <div class="session-actions">
         <button type="button" class="session-ghost" id="study-session-skip"
                 data-action="next-session-phase">Saltar a la siguiente fase →</button>
-        <!-- Atajo para el que ya sabe el tema: cierra el programa completo del
-             tema (🟢 dominado) sin pasar por las tres fases. Va en verde porque
-             es lo que hace, y no es "ghost" como los otros dos: es la única
-             acción del pie que deja algo guardado. -->
-        <button type="button" class="session-pass" id="study-session-pass"
-                data-action="pass-session"
-                title="Marca este tema como dominado y cierra la clase. Puedes volver a bajarle el nivel desde la tarjeta del tema.">
-          ✅ Dar lección por pasada</button>
+        <!-- Los dos atajos del que ya sabe la materia. Van en verde porque son
+             las únicas acciones del pie que dejan algo guardado, y el de la
+             sesión va relleno y el del tema en contorno porque aprobar UNA
+             clase es lo normal: cerrar el tema entero de una es la excepción.
+             app.js les escribe el texto (dependen de en qué sesión va). -->
+        <button type="button" class="session-pass" id="study-session-pass-lesson"
+                data-action="pass-lesson"
+                title="Da por cumplida esta sesión y suma 1 al programa del tema. El tema solo pasa a verde con la última.">
+          ✅ Aprobar esta lección (+1 sesión)</button>
+        <button type="button" class="session-pass is-topic" id="study-session-pass-topic"
+                data-action="pass-topic"
+                title="Cierra el programa completo del tema y lo deja en verde. Puedes volver a bajarle el nivel desde la tarjeta del tema.">
+          🎓 Completar todo el tema</button>
         <button type="button" class="session-ghost is-end"
                 data-action="finish-session">Concluir sesión</button>
         <span class="session-note" id="study-session-note">Enter envía; Shift+Enter agrega una línea.

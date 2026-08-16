@@ -2436,22 +2436,30 @@ body.modal-open{overflow:hidden;}
 .session-ghost:focus-visible{outline:2px solid var(--focus-gold); outline-offset:2px;}
 .session-ghost[disabled]{opacity:.4; cursor:default;}
 .session-ghost[disabled]:hover{border-color:var(--focus-line); color:var(--focus-soft);}
-/* "Dar lección por pasada": la única acción del pie que cambia el plan, así que
-   es la única con relleno. Verde, el mismo del cierre logrado, porque deja el
-   tema exactamente donde lo dejaría terminar el programa. */
+/* Los dos atajos: las únicas acciones del pie que cambian el plan, así que son
+   las únicas en verde —el mismo del cierre logrado—. Aprobar la sesión en curso
+   es lo normal y va relleno; cerrar el tema entero es la excepción y va en
+   contorno, para que no compitan por el mismo clic. */
 .session-pass{
   font-family:'Inter',sans-serif;
   font-size:12.5px; font-weight:600;
   padding:8px 14px;
   border:1px solid var(--focus-green);
-  background:rgba(132,196,143,0.14); color:var(--focus-green);
+  background:var(--focus-green); color:#101728;
   cursor:pointer;
   flex:none;
 }
-.session-pass:hover{background:var(--focus-green); color:#101728;}
+.session-pass:hover{background:#9ad3a4; border-color:#9ad3a4;}
 .session-pass:focus-visible{outline:2px solid var(--focus-gold); outline-offset:2px;}
 .session-pass[disabled]{opacity:.4; cursor:default;}
-.session-pass[disabled]:hover{background:rgba(132,196,143,0.14); color:var(--focus-green);}
+.session-pass[disabled]:hover{background:var(--focus-green); border-color:var(--focus-green);}
+
+.session-pass.is-topic{
+  font-weight:500;
+  background:transparent; color:var(--focus-green);
+}
+.session-pass.is-topic:hover{background:rgba(132,196,143,0.16); border-color:var(--focus-green);}
+.session-pass.is-topic[disabled]:hover{background:transparent;}
 
 .session-note{
   flex:1; min-width:160px;
