@@ -976,10 +976,27 @@ main{max-width:980px; margin:0 auto; padding:36px 20px 80px;}
 .topic-answer.ok{background:var(--lvl-bajo-soft); border-left-color:var(--lvl-bajo);}
 .topic-answer.ko{background:var(--lvl-alto-soft); border-left-color:var(--lvl-alto);}
 
-.topic-level-picker{
-  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+/* El selector de nivel y el reinicio comparten fila: los dos son la misma
+   idea —corregir a mano lo que la app dedujo— y el reinicio se empuja al
+   extremo para que no se confunda con una opción más del desplegable. */
+.topic-level-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; flex-wrap:wrap;
   margin-bottom:16px;
 }
+.topic-level-picker{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.topic-reset{
+  font-family:'Inter',sans-serif;
+  font-size:12.5px;
+  padding:7px 12px;
+  border:1px dashed var(--line);
+  background:transparent; color:var(--ink-soft);
+  cursor:pointer;
+}
+.topic-reset:hover{border-style:solid; border-color:var(--lvl-alto); color:var(--lvl-alto);}
+.topic-reset:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
 .topic-level-picker > span{
   font-family:'JetBrains Mono',monospace;
   font-size:11px; letter-spacing:.06em; text-transform:uppercase;
@@ -1129,7 +1146,9 @@ body.modal-open{overflow:hidden;}
   .readiness-pct{font-size:24px;}
   .topic-head{padding:13px 13px;}
   .topic-name{font-size:16px;}
+  .topic-level-picker{width:100%;}
   .topic-level-picker select{width:100%;}
+  .topic-reset{width:100%; text-align:center;}
 }
 
 /* --- Sección de evaluaciones pasadas (dentro del planificador) --- */
@@ -3749,6 +3768,22 @@ body.modal-open{overflow:hidden;}
 .toast b{color:#fff;}
 .toast.is-ok{border-left-color:var(--lvl-bajo-soft);}
 .toast.is-error{border-left-color:#e79680;}
+
+/* Con "Deshacer" el aviso deja de ser una línea de texto y pasa a tener un
+   control: el texto manda y el botón se queda con lo justo, sin encogerse. */
+.toast.has-action{display:flex; align-items:center; gap:12px;}
+.toast-text{flex:1; min-width:0;}
+.toast-action{
+  font-family:'Inter',sans-serif;
+  font-size:12.5px; font-weight:600;
+  padding:7px 12px;
+  flex:none;
+  border:1px solid var(--gold-soft);
+  background:transparent; color:var(--gold-soft);
+  cursor:pointer;
+}
+.toast-action:hover{background:var(--gold-soft); color:var(--ink);}
+.toast-action:focus-visible{outline:2px solid #fff; outline-offset:2px;}
 /* Salida: la pone app.js justo antes de sacar el nodo del árbol. */
 .toast.is-out{animation:toast-out .2s ease-in forwards;}
 
@@ -3769,6 +3804,10 @@ body.modal-open{overflow:hidden;}
 @media (max-width:560px){
   .toast-stack{bottom:14px; width:calc(100vw - 24px);}
   .toast{font-size:13px; padding:12px 14px;}
+  /* El botón bajo el texto: en una sola línea le robaría al mensaje justo el
+     ancho que necesita para leerse. */
+  .toast.has-action{flex-direction:column; align-items:stretch; gap:10px;}
+  .toast-action{width:100%;}
 }
 
 /* Pie de la página. Por clase por la misma razón que .site-header: los pies de

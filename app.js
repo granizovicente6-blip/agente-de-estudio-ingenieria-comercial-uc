@@ -1953,15 +1953,23 @@ function escapeHtml(s){
 
    `html` va sin escapar a propósito —los llamadores arman el mensaje con <b> y
    escapan lo suyo con escapeHtml—, igual que el resto de los render de la app.
+
+   `action` es opcional: { label, run }. Con él el aviso deja de ser solo un
+   aviso y pasa a ser la forma de deshacer lo que acaba de pasar, así que dura
+   bastante más: cinco segundos alcanzan para leer "listo", no para darse cuenta
+   de que uno le apuntó al botón equivocado.
    --------------------------------------------------------------------------- */
 const TOAST_MS = 5200;
+const TOAST_ACTION_MS = 11000;
 
-function showToast(html, tone = 'ok'){
+function showToast(html, tone = 'ok', action = null){
   if(!toastStackEl) return null;
 
+  const withAction = !!(action && action.label && typeof action.run === 'function');
+
   const el = document.createElement('div');
-  el.className = `toast is-${tone}`;
-  el.innerHTML = html;
+  el.className = `toast is-${tone}${withAction ? ' has-action' : ''}`;
+  el.innerHTML = `<span class="toast-text">${html}</span>`;
 
   // Se puede sacar de encima con un clic: el aviso llega abajo al centro y en
   // pantallas chicas queda sobre el contenido.
@@ -1973,7 +1981,23 @@ function showToast(html, tone = 'ok'){
     setTimeout(() => el.remove(), 200);
   };
   el.addEventListener('click', dismiss);
-  timer = setTimeout(dismiss, TOAST_MS);
+
+  if(withAction){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    // El clic en el botón no puede quedarse también con el del aviso: se cierra
+    // aquí y a mano, y el de arriba no llega a correr dos veces.
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      dismiss();
+      action.run();
+    });
+    el.appendChild(btn);
+  }
+
+  timer = setTimeout(dismiss, withAction ? TOAST_ACTION_MS : TOAST_MS);
 
   toastStackEl.appendChild(el);
   // Tres avisos apilados ya tapan media pantalla: se van los más viejos.
@@ -2920,14 +2944,23 @@ function renderTopicCard(course, topic, plan){
             : 'La clase guiada es lo más parecido a sentarte con un profesor: te explica el tema, te hace resolver un ejercicio paso a paso y te evalúa al final —si respondes bien, el tema queda en verde. Si tienes menos tiempo: la práctica es el ejercicio solo, las flashcards el repaso corto, y “peras y manzanas” la analogía para partir de cero. Para una duda puntual, pregúntale directo.'}</span>
         </div>
         ${answerHtml}
-        <label class="topic-level-picker">
-          <span>Ajustar nivel</span>
-          <select data-level-topic="${escapeHtml(topic.id)}">
-            <option value="alto"  ${level === 'alto'  ? 'selected' : ''}>🔴 Urgencia crítica</option>
-            <option value="medio" ${level === 'medio' ? 'selected' : ''}>🟡 ${escapeHtml(levelLabel('medio', topic.relevance))}</option>
-            <option value="bajo"  ${level === 'bajo'  ? 'selected' : ''}>🟢 Dominado</option>
-          </select>
-        </label>
+        <div class="topic-level-row">
+          <label class="topic-level-picker">
+            <span>Ajustar nivel</span>
+            <select data-level-topic="${escapeHtml(topic.id)}">
+              <option value="alto"  ${level === 'alto'  ? 'selected' : ''}>🔴 Urgencia crítica</option>
+              <option value="medio" ${level === 'medio' ? 'selected' : ''}>🟡 ${escapeHtml(levelLabel('medio', topic.relevance))}</option>
+              <option value="bajo"  ${level === 'bajo'  ? 'selected' : ''}>🟢 Dominado</option>
+            </select>
+          </label>
+          <!-- La salida del que dio una clase por pasada sin querer, o del que
+               simplemente quiere cursar el tema de nuevo. Solo aparece cuando
+               hay algo que reiniciar: con el programa en 0 no haría nada. -->
+          ${program && program.done > 0 ? `
+            <button type="button" class="topic-reset" data-reset="${escapeHtml(topic.id)}"
+                    title="Devuelve el programa a la sesión 1 de ${program.total} y el tema al nivel que dijo el mini test.">
+              ↺ Volver a cursar desde 0</button>` : ''}
+        </div>
         <p class="topic-steps-title">Pasos sugeridos</p>
         ${stepsHtml}
       </div>
@@ -3099,6 +3132,9 @@ if(diagnosticOutputEl) diagnosticOutputEl.addEventListener('click', ev => {
 
   const chat = ev.target.closest('[data-topic-chat]');
   if(chat){ openTopicChat(activeCourse, chat.getAttribute('data-topic-chat')); return; }
+
+  const reset = ev.target.closest('[data-reset]');
+  if(reset){ resetTopicFromCard(reset.getAttribute('data-reset')); return; }
 
   const head = ev.target.closest('[data-toggle]');
   if(head){
@@ -6684,6 +6720,128 @@ function applySessionVerdict(s, verdict){
    Se separan del modal a propósito: lo único que necesitan es el ramo y el
    tema, así que sirven igual si algún día se agregan a la tarjeta. */
 
+/* Todo lo que una clase —o un atajo— le cambia a un tema cabe en cuatro
+   casillas del diagnóstico. Copiarlas antes de tocarlas es lo que permite
+   ofrecer "Deshacer": no se recalcula nada al revés, se vuelve a escribir lo
+   que había. `undefined` es un estado posible y distinto de cualquier valor
+   (el tema todavía no tenía pasos marcados, o ni siquiera programa), así que se
+   guarda como tal y al restaurar se borra la clave en vez de escribirla. */
+function snapshotTopicProgress(course, topicId){
+  const d = getDiagnostic(course);
+  if(!d) return null;
+  const ai = getAiAnalysis(course);
+  const topic = ai && ai.topics.find(t => t.id === topicId);
+  const clone = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+  return {
+    course, topicId,
+    name: topic ? topic.name : topicId,
+    level:     d.levels[topicId],
+    steps:     clone(d.steps[topicId]),
+    practiced: clone(d.practiced[topicId]),
+    program:   clone(d.sessions[topicId])
+  };
+}
+
+function restoreTopicProgress(snap){
+  const d = snap && getDiagnostic(snap.course);
+  if(!d) return false;
+  const put = (bag, key, value) => { if(value === undefined) delete bag[key]; else bag[key] = value; };
+  put(d.levels,    snap.topicId, snap.level);
+  put(d.steps,     snap.topicId, snap.steps);
+  put(d.practiced, snap.topicId, snap.practiced);
+  put(d.sessions,  snap.topicId, snap.program);
+  savePastEvals();
+  return true;
+}
+
+// El "Deshacer" del aviso. Vuelve a dejar el tema como estaba y lo cuenta, para
+// que el alumno vea que la vuelta atrás sí ocurrió.
+function undoTopicProgress(snap){
+  if(!restoreTopicProgress(snap)){
+    showToast('No se pudo restaurar el progreso: este tema ya no está en el plan del ramo.', 'error');
+    return;
+  }
+  if(snap.course === activeCourse){
+    renderDiagnostic();
+    renderPlanner();
+    renderPlanState();
+  }
+  const p = snap.program;
+  showToast(`↩️ <b>Progreso restaurado.</b> “${escapeHtml(snap.name)}” volvió a ${p
+    ? `${p.done} de ${p.total} ${plural(p.total, 'sesión', 'sesiones')}`
+    : 'como estaba'} y a ${LEVELS[snap.level] ? LEVELS[snap.level].dot : ''} ${
+    escapeHtml(LEVELS[snap.level] ? LEVELS[snap.level].label.toLowerCase() : 'su nivel anterior')}.`);
+}
+
+/* Volver a cursar el tema desde cero, desde la tarjeta del plan. A diferencia
+   del "Deshacer" del aviso —que revierte UNA acción y sabe exactamente a qué
+   estado volver—, este no tiene historia que consultar: deja el tema donde
+   estaba antes de cualquier clase, que es lo que dijo el mini test. Por eso
+   también suelta los pasos marcados y la práctica: son parte de lo que dio por
+   cumplido el programa, y dejarlos puestos sobre un contador en 0 mentiría en
+   la barra de preparación. */
+function resetTopicProgram(course, topicId){
+  const ai = getAiAnalysis(course);
+  const topic = ai && ai.topics.find(t => t.id === topicId);
+  const d = getDiagnostic(course);
+  if(!topic || !d) return null;
+
+  // El programa se conserva (mismo total, mismos bloques) y solo se pone en
+  // cero: el alumno pidió volver a cursarlo, no que se lo vuelvan a dimensionar.
+  const program = getSessionProgram(course, topicId);
+  if(program){
+    program.done = 0;
+    program.spentMin = 0;
+    program.updatedAt = Date.now();
+  }
+
+  // Un tema sin responder cuenta como duda, igual que en el diagnóstico.
+  d.levels[topicId] = levelFromMatrix(topic.relevance, isAnswerCorrect(topic, d.answers[topicId]));
+  delete d.steps[topicId];
+  delete d.practiced[topicId];
+  savePastEvals();
+
+  return { total: program ? program.total : 0, level: d.levels[topicId] };
+}
+
+// El botón de la tarjeta. Es la única de las tres acciones que se pregunta
+// antes: el "Deshacer" del aviso repara un clic que acaba de ocurrir, pero acá
+// el alumno puede estar soltando pasos y prácticas de hace semanas.
+function resetTopicFromCard(topicId){
+  const ai = getAiAnalysis(activeCourse);
+  const topic = ai && ai.topics.find(t => t.id === topicId);
+  if(!topic) return;
+
+  const program = getSessionProgram(activeCourse, topicId);
+  const total = program ? program.total : 1;
+  const done = program ? Math.min(program.done, program.total) : 0;
+  const marked = topicSteps(activeCourse, topic).done;
+
+  const ok = confirm(`Vas a volver a cursar “${topic.name}” desde cero.\n\n` +
+    `El programa vuelve a la sesión 1 de ${total}${done ? ` (ahora va en ${done})` : ''} y el tema ` +
+    `vuelve al nivel que dijo el mini test${marked
+      ? `. También se sueltan sus ${marked} ${plural(marked, 'paso marcado', 'pasos marcados')}` : ''}` +
+    `${isPracticed(activeCourse, topicId) ? ' y la práctica que tenía registrada' : ''}.\n\n` +
+    '¿Reiniciarlo?');
+  if(!ok) return;
+
+  const snap = snapshotTopicProgress(activeCourse, topicId);
+  const res = resetTopicProgram(activeCourse, topicId);
+  if(!res){
+    showToast('No se pudo reiniciar el tema: ya no está en el plan del ramo.', 'error');
+    return;
+  }
+
+  renderDiagnostic();
+  renderPlanner();
+  renderPlanState();
+
+  const lvl = LEVELS[res.level] || LEVELS.alto;
+  showToast(`↺ <b>Tema reiniciado.</b> “${escapeHtml(topic.name)}” vuelve a la <b>sesión 1 de ` +
+    `${res.total || total}</b> y a ${lvl.dot} ${escapeHtml(lvl.label.toLowerCase())}.`,
+    'ok', { label: '↩️ Deshacer', run: () => undoTopicProgress(snap) });
+}
+
 // Los minutos con que una sesión "salta" el presupuesto. El bloque entero, no
 // el reloj de la clase: `spentMin` es lo que hace que las horas restantes del
 // tema equivalgan a las sesiones pendientes por el largo del bloque (ver
@@ -6760,6 +6918,8 @@ function passStudySession(scope){
   if(!s || s.pending) return;
 
   const before = readinessPct(s.course);
+  // Antes de tocar nada: es a esto que vuelve el "Deshacer" del aviso.
+  const snap = snapshotTopicProgress(s.course, s.topicId);
   const result = scope === 'topic'
     ? (markTopicMastered(s.course, s.topicId) ? { last: true } : null)
     : markLessonPassed(s.course, s.topicId);
@@ -6792,16 +6952,17 @@ function passStudySession(scope){
     ? ` La preparación de ${escapeHtml(course)} subió de ${before}% a ${after}%.` : '';
   const title = escapeHtml(name);
 
-  if(scope === 'topic'){
-    showToast(`✅ <b>¡Tema dado por pasado!</b> “${title}” quedó 🟢 dominado con su programa completo.${lift}`);
-  } else if(result.last){
-    showToast(`✅ <b>¡Programa terminado!</b> Era la última sesión de “${title}”, así que el tema quedó ` +
-      `🟢 dominado (${result.done} de ${result.total}).${lift}`);
-  } else {
-    showToast(`✅ <b>¡Sesión completada!</b> Avanzaste en el programa de “${title}”: ` +
-      `<b>${result.done} de ${result.total}</b> ${plural(result.total, 'sesión', 'sesiones')}. ` +
-      `El tema sigue abierto hasta la última.${lift}`);
-  }
+  const msg = scope === 'topic'
+    ? `✅ <b>¡Tema dado por pasado!</b> “${title}” quedó 🟢 dominado con su programa completo.${lift}`
+    : result.last
+      ? `✅ <b>¡Programa terminado!</b> Era la última sesión de “${title}”, así que el tema quedó ` +
+        `🟢 dominado (${result.done} de ${result.total}).${lift}`
+      : `✅ <b>¡Sesión completada!</b> Avanzaste en el programa de “${title}”: ` +
+        `<b>${result.done} de ${result.total}</b> ${plural(result.total, 'sesión', 'sesiones')}. ` +
+        `El tema sigue abierto hasta la última.${lift}`;
+
+  // El botón que hace que apretar el verde equivocado no cueste nada.
+  showToast(msg, 'ok', { label: '↩️ Deshacer', run: () => undoTopicProgress(snap) });
 }
 
 /* --- Render ----------------------------------------------------------------- */
