@@ -1554,8 +1554,13 @@ body.modal-open{overflow:hidden;}
   min-height:290px;
   padding-bottom:16px;      /* deja asomar las cartas del mazo de más abajo */
 }
+/* El z-index:0 no es decorativo: convierte la tarjeta en contexto de apilado
+   para que los naipes del mazo (z-index:-1) queden detrás de las caras pero
+   delante del fondo del modal. Sin él, el -1 los mandaría hasta el fondo del
+   .test-overlay y el mazo desaparecería. */
 .flashcard{
   position:relative;
+  z-index:0;
   width:100%;
   min-height:290px;
   cursor:pointer;
@@ -1569,12 +1574,15 @@ body.modal-open{overflow:hidden;}
 
 /* Mazo: dos cartas más abajo asomando detrás de la de arriba. Van en los
    pseudoelementos de .flashcard (que no gira) y no de .flashcard-inner (que sí),
-   para que se queden quietas mientras la de arriba da la vuelta. Pintan antes
-   que .flashcard-inner porque este crea contexto de apilado con preserve-3d. */
+   para que se queden quietas mientras la de arriba da la vuelta.
+   El z-index:-1 es obligatorio, no un ajuste fino: los tres son position:absolute
+   con z-index:auto, así que sin él se pintan en orden de árbol y ::after —que va
+   después de los hijos— tapaba la cara de la tarjeta con el gris del mazo. */
 .flashcard::before,
 .flashcard::after{
   content:'';
   position:absolute; inset:0;
+  z-index:-1;
   border-radius:18px;
   background:var(--fc-deck);
   border:1px solid var(--fc-edge);
