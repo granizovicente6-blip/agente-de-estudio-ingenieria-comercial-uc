@@ -2685,6 +2685,11 @@ function renderTest(){
   const head = `
     <div class="test-head">
       <div class="test-head-row">
+        <button type="button" class="modal-back" data-action="close"
+                aria-label="Salir del test y volver al plan de estudio">
+          <span class="modal-back-arrow" aria-hidden="true">←</span>
+          <span class="modal-back-text">Volver al plan de estudio</span>
+        </button>
         <p class="test-eyebrow">Mini test de diagnóstico exprés</p>
         <button type="button" class="test-close" data-action="close"
                 aria-label="Cerrar el test y volver">×</button>

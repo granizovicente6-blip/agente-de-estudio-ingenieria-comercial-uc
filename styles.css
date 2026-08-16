@@ -3494,6 +3494,163 @@ body.modal-open{overflow:hidden;}
 }
 
 /* =========================================================================
+   VISTA A PANTALLA COMPLETA
+
+   Todas las herramientas del plan —clase guiada, flashcards, práctica, guía,
+   ficha, simulacro, chat— se abren como una pantalla entera y no como una
+   ventanita flotante sobre el fondo oscuro. Lo que se hace dentro no es
+   confirmar algo en dos segundos: es leer y escribir durante veinte minutos, y
+   en una caja de 620px con su propia barra de scroll interna se lee bastante
+   peor que en el navegador completo.
+
+   El bloque va al final de la hoja a propósito: con la misma especificidad pero
+   más abajo pisa los `max-width` y los `height:min(...)` que cada modal declara
+   en su sección, sin tener que desarmar ocho reglas distintas ni perder por el
+   camino el acento de color de cada herramienta.
+   ========================================================================= */
+
+/* El diálogo llena el hueco entero del overlay, que ya es position:fixed con
+   inset:0. Se usa el 100% de ese hueco y no 100vw porque 100vw incluye el ancho
+   de la barra de scroll del documento y dejaría una franja de desborde
+   horizontal en el escritorio. El 100dvh del overlay sí sigue al alto real del
+   móvil (donde la barra del navegador aparece y desaparece); los navegadores
+   que no entienden dvh descartan la línea y se quedan con el inset:0. */
+.test-overlay{
+  padding:0;
+  align-items:stretch;
+  justify-content:stretch;
+  height:100dvh;
+}
+/* El selector lleva el overlay delante para subir un punto de especificidad: el
+   selector de carrera fija su ancho con `.test-dialog.career-dialog`, que son
+   dos clases y le ganaría a un `.test-dialog` pelado por más abajo que esté. */
+.test-overlay > .test-dialog{
+  width:100%;
+  max-width:100%;
+  height:100%;
+  max-height:100%;
+  margin:0;
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+}
+
+/* El acento de nivel de cada herramienta pasa del borde izquierdo al superior:
+   a pantalla completa una raya vertical pegada al canto de la pantalla no se
+   lee como acento, arriba sí. */
+.test-overlay > .practice-dialog,
+.test-overlay > .chat-dialog,
+.test-overlay > .guide-dialog{border-top:4px solid var(--line);}
+.test-overlay > .practice-dialog.lvl-alto,
+.test-overlay > .chat-dialog.lvl-alto,
+.test-overlay > .guide-dialog.lvl-alto{border-top-color:var(--lvl-alto);}
+.test-overlay > .practice-dialog.lvl-medio,
+.test-overlay > .chat-dialog.lvl-medio,
+.test-overlay > .guide-dialog.lvl-medio{border-top-color:var(--lvl-medio);}
+.test-overlay > .practice-dialog.lvl-bajo,
+.test-overlay > .chat-dialog.lvl-bajo,
+.test-overlay > .guide-dialog.lvl-bajo{border-top-color:var(--lvl-bajo);}
+.test-overlay > .feynman-dialog,
+.test-overlay > .exam-dialog{border-top:4px solid var(--gold);}
+
+/* --- Columna de lectura ---
+   A pantalla completa el texto no puede ir de canto a canto: en un monitor
+   ancho una línea de doscientos caracteres es ilegible. La barra, el cuerpo y
+   el pie siguen ocupando el ancho entero —los fondos de color y las líneas
+   divisorias llegan al borde, que es lo que hace que se vea como una pantalla y
+   no como una caja— pero su contenido se centra en una columna del ancho que
+   pida cada herramienta. */
+.test-dialog{--modal-measure:820px; --modal-gutter:20px;}
+.practice-dialog{--modal-measure:780px;}
+.flashcards-dialog{--modal-measure:760px;}
+.feynman-dialog{--modal-measure:780px;}
+.chat-dialog{--modal-measure:880px;}
+.session-dialog{--modal-measure:940px;}
+.exam-dialog{--modal-measure:840px;}
+.sheet-dialog{--modal-measure:900px;}
+.guide-dialog{--modal-measure:1000px;}
+.career-dialog{--modal-measure:1000px;}
+
+.test-dialog > .test-head,
+.test-dialog > .test-body,
+.test-dialog > .test-foot{
+  padding-inline:max(var(--modal-gutter), calc((100% - var(--modal-measure)) / 2));
+}
+
+/* El cuerpo es lo único que crece: el min-height:0 es el que deja que de verdad
+   se encoja y saque su propia barra de scroll en vez de empujar el pie fuera de
+   la pantalla (un hijo flex no baja de su alto de contenido sin esa línea). */
+.test-dialog > .test-body{flex:1 1 auto; min-height:0; overflow-y:auto;}
+.test-dialog > .test-head,
+.test-dialog > .test-foot{flex:none;}
+
+/* El mazo se estira hasta el pie en cualquier tamaño de pantalla, no solo en el
+   celular: si se quedara en su alto mínimo, a pantalla completa quedaría un
+   vacío enorme bajo la tarjeta. */
+.flashcards-body{display:flex; flex-direction:column;}
+.flashcard-container{flex:1 1 auto; display:flex; flex-direction:column;}
+.flashcard, .flashcard-inner{flex:1 1 auto;}
+
+/* --- Volver al plan ---
+   A pantalla completa no queda nada de la app a la vista, así que la salida
+   tiene que estar escrita y no solo dibujada: la ✕ de la derecha sigue ahí para
+   quien la busque en su sitio de siempre, pero el camino de vuelta se anuncia a
+   la izquierda, que es donde se lee primero. */
+.modal-back{
+  display:inline-flex; align-items:center; gap:7px;
+  flex:none;
+  font-family:'Inter',sans-serif;
+  font-size:12.5px; font-weight:500; line-height:1;
+  padding:7px 12px 7px 9px;
+  background:var(--paper);
+  border:1px solid var(--line);
+  color:var(--ink-soft);
+  cursor:pointer;
+}
+.modal-back:hover{border-color:var(--ink); color:var(--ink); background:var(--gold-soft);}
+.modal-back:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
+.modal-back-arrow{font-size:14px; line-height:1;}
+
+/* Con el botón de volver a la izquierda y la ✕ (o el reloj) a la derecha, la
+   etiqueta de la herramienta queda de rótulo centrado entre los dos. El
+   combinador de hermano hace que esto solo pase en las barras que tienen
+   botón: la del selector de carrera conserva su etiqueta a la izquierda. */
+.modal-back ~ .test-eyebrow{flex:1 1 auto; text-align:center; min-width:0;}
+
+/* Los dos modales de paleta propia se lo pintan a su medida. */
+.flashcards-dialog .modal-back{
+  background:#fff; border-color:var(--fc-edge); color:var(--fc-muted);
+}
+.flashcards-dialog .modal-back:hover{
+  border-color:var(--fc-accent); color:var(--fc-accent-ink); background:var(--fc-accent-soft);
+}
+.session-head .modal-back{
+  background:var(--focus-panel); border-color:var(--focus-line); color:var(--focus-soft);
+}
+.session-head .modal-back:hover{
+  border-color:var(--focus-gold); color:var(--focus-gold); background:var(--focus-panel-soft);
+}
+
+@media (max-width:560px){
+  .test-dialog{--modal-gutter:16px;}
+  /* En el celular manda el ancho: el texto del botón se va y queda la flecha,
+     que es el gesto de volver que ya se conoce. El nombre completo sigue en el
+     aria-label para quien navegue con lector de pantalla. */
+  .modal-back-text{
+    position:absolute; width:1px; height:1px;
+    padding:0; margin:-1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap;
+  }
+  .modal-back{padding:7px 10px;}
+  .modal-back-arrow{font-size:16px;}
+  .test-head-row{gap:8px;}
+  /* La ficha y la guía son documentos: en el celular van de canto a canto y el
+     margen lo pone la hoja por dentro, así que aquí no llevan gutter. */
+  .test-dialog > .sheet-body,
+  .test-dialog > .guide-body{padding-inline:0;}
+}
+
+/* =========================================================================
    IMPRESIÓN
 
    Todo el bloque cuelga de `body.sheet-open`, la clase que app.js pone mientras
@@ -3529,12 +3686,16 @@ body.modal-open{overflow:hidden;}
     z-index:auto !important;
     background:none !important;
     padding:0 !important;
+    height:auto !important;
   }
   body.sheet-open #cheat-sheet-modal{
     border:none !important;
     box-shadow:none !important;
     width:auto !important;
     max-width:none !important;
+    /* El alto va explícito además del tope: en pantalla el diálogo mide el 100%
+       de la ventana y sin esta línea la ficha se imprimiría cortada a una hoja. */
+    height:auto !important;
     max-height:none !important;
     overflow:visible !important;
   }
@@ -3645,12 +3806,14 @@ body.modal-open{overflow:hidden;}
     z-index:auto !important;
     background:none !important;
     padding:0 !important;
+    height:auto !important;
   }
   body.guide-open #study-guide-modal{
     border:none !important;
     box-shadow:none !important;
     width:auto !important;
     max-width:none !important;
+    height:auto !important;
     max-height:none !important;
     overflow:visible !important;
   }
